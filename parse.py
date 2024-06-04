@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Callable
 import pprint
 from dataclasses import dataclass
@@ -35,41 +36,49 @@ class OPCItemPath:
 
 
 
-@dataclass
+@dataclass(frozen=True, order=True)
 class Node:
     name: str
     tagType: str
     path: str
-    expression: Optional[str] = None
-    parameters: Optional[dict] = None
-    alarms: Optional[dict] = None
-    opcItemPath: Optional[OPCItemPath] = None
+    typeId: str|None = None
+    expression: str|None= None
+    parameters: dict|None = None
+    alarms: dict|None = None
+    opcItemPath: OPCItemPath|None = None
+    tags: dict|None = None
 
     @classmethod
     def from_dict(cls, node_dict: dict, path: str):
         struct_dict = {key: val for key, val in node_dict.items() if key in cls.__annotations__}
+        if 'opcItemPath' in node_dict:
+            struct_dict['opcItemPath'] = OPCItemPath(node_dict['opcItemPath'])
         return cls(path=path, **struct_dict)
 
 
-root = "C:\\Users\\s.bmiller\\Downloads\\4-11-2024\\"
+root = os.path.dirname(os.path.realpath(__file__))
 area = 'South'
 file = "%s tags.json"%area.lower()
 # print(os.path.abspath('south tags.json'))
 
-def atomic_node(node, path):
-    atomic_flags.add(tuple(node.keys()))
+def atomic_node(node: Node, path: str):
+    """
+    Strategy function for atomic nodes
+    """
+    # Path unused in strategy
+    _ = path
     # min_atom_set(set(node.keys()))
     # max_atom_set(set(node.keys()))
-    if 'alarms' in node:
-        for alarm in node['alarms']:
+    if node.alarms is not None:
+        for alarm in node.alarms:
             alarm_count_dict(set(alarm.keys()))
-    if 'expression' in node:
+    if node.expression is not None:
 
-        if 'isNull' in node['expression'] and 'toString' in node['expression']:
+        if 'isNull' in node.expression and 'toString' in node.expression:
             # Change
-            node['expression'] = alarm_format(node['expression']) 
+            node.expression = alarm_format(node.expression) 
 
-            expression_set.add(node['expression'])
+            expression_set.add(node.expression)
     # Change
     node = history_update(node)
     node = update_opc_path(node)
@@ -78,48 +87,58 @@ def atomic_node(node, path):
     # node = add_min_history(node, 6)
     atom_count_dict(set(node.keys()))
 
-def udt_node(node, path):
-    if 'typeId' not in node:
+def udt_node(node: Node, path: str):
+    """
+    Strategy function for UDT nodes
+    """
+    if node.typeId is None:
         return
 
-    tag_name_set.add(node['name'])
+    tag_name_set.add(node.name)
     udt_nodes.add(tuple(node.keys()))
     # Change 
     node = type_prefix_removal(node)
     node = type_case_correction(node, path)
     if '_types_/' in path:
-        udt_name_set.add(path.lstrip('_types_/') + '/' + node['name'])
+        udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
     if 'parameters' in node:
         # change
-        node['parameters'] = parameter_change(node['parameters'], '~', '_t_')
-        inst_parameter_dict[node['name']] = {parameter for parameter in node['parameters']} 
+        node.parameters = parameter_change(node.parameters, '~', '_t_')
+        inst_parameter_dict[node.name] = {parameter for parameter in node.parameters} 
     if 'alarms' in node:
-        alarm_udt_nodes.add(node['name'])
+        alarm_udt_nodes.add(node.name)
         alarm_udt_node.append(node)
     udt_count_dict(set(node.keys()))
 
-def udt_base_node(node, path):
+def udt_base_node(node: Node, path: str) -> None:
+    """
+    Strategy function for base UDT nodes
+    """
     # if 'parameters' not in node:
-    #     tags_without_parameters[node['name']] = node['typeId']
-    # tag_name_set.add(node['name'])
-    udt_name_set.add(path.lstrip('_types_/') + '/' + node['name'])
+    #     tags_without_parameters[node.name] = node.typeId
+    # tag_name_set.add(node.name)
+    udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
     udt_base_nodes.add(tuple(node.keys()))
     if 'typeId' in node:
         # change
         node = type_prefix_removal(node)
     if 'alarms' in node:
-        alarm_udt_base_nodes.add(node['name'])
+        alarm_udt_base_nodes.add(node.name)
         alarm_udt_base_node.append(node)
     if 'parameters' in node:
         # change
-        node['parameters'] = namespace_parameter_addition(parameter_change(node['parameters'], '~', '_t_'))
-        node['parameters'] = parameter_remove(node['parameters'], '_Historize')
+        node.parameters = namespace_parameter_addition(parameter_change(node.parameters, '~', '_t_'))
+        node.parameters = parameter_remove(node.parameters, '_Historize')
 
-        parameter_dict[node['name']] = {parameter for parameter in node['parameters']} 
+        parameter_dict[node.name] = {parameter for parameter in node.parameters} 
     udt_count_dict(set(node.keys()))
 
-def folder_node(node, path):
-    folder_name_set.add(node['name'])
+def folder_node(node: Node, path: str):
+    """
+    Strategy function for folder UDT nodes
+    """
+    _ = path
+    folder_name_set.add(node.name)
 
 def minimum_set() -> Callable[[set], set]:
     min_set: set = set()
@@ -229,7 +248,7 @@ def key_count() -> Callable[[set], dict]:
         return count_dict
     return count_update
 
-with open(root + file, "r") as read_file:
+with open(root + '/' + file, "r") as read_file:
     data = json.load(read_file)
 
     tags = data['tags']
@@ -247,7 +266,6 @@ with open(root + file, "r") as read_file:
     udt_base_nodes = set()
     alarm_udt_base_nodes = set()
     alarm_udt_base_node = []
-    atomic_flags = set()
     expression_set = set()
     udt_name_set = set()
     missing_udt_dict = {}
@@ -276,16 +294,20 @@ with open(root + file, "r") as read_file:
             # print(node.keys())
             if not node:
                 return
+
+            
             dict_set.add(tuple(node.keys()))
             tag_type.add(node['tagType'])
 
+            node = Node.from_dict(node, path)
+            # print(new_node)
             node_func = {
                 'Folder': folder_node,
                 'UdtInstance': udt_node,
                 'AtomicTag': atomic_node,
-                'UdtType': udt_base_node
+                'UdtType': udt_base_node,
             }
-            node_func[node['tagType']](node, path)
+            node_func[node.tagType](node, path)
             
 
             # print(node.keys())
@@ -305,7 +327,6 @@ with open(root + file, "r") as read_file:
     pprint.pprint(tag_type)
     # pprint.pprint(tags_without_parameters)
     # pprint.pprint(udt_nodes)
-    # pprint.pprint(atomic_flags)
     # pprint.pprint(min_atom_set)
 
     # pprint.pprint(min_atom_set(set()))
