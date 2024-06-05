@@ -1,3 +1,4 @@
+from _typeshed import DataclassInstance
 import json
 import os
 from typing import Callable
@@ -17,7 +18,7 @@ class OPCItemPath:
         if isinstance(self.obj, dict):
             return self.obj['binding']
     @binding.setter
-    def path(self, value):
+    def binding(self, value):
         if isinstance(self.obj, str):
             self.obj = value
         if isinstance(self.obj, dict):
@@ -34,13 +35,22 @@ class OPCItemPath:
         if isinstance(self.obj, dict):
             self.obj['bindType'] = value
 
+@dataclass(order=True)
+class Parameters:
+    namespace: dict|None
+    namespaceFlag: dict|None
 
+    @classmethod
+    def from_dict(cls, node_dict: dict):
+        struct_dict = {key: val for key, val in node_dict.items() if key in cls.__annotations__}
+        return cls(**struct_dict)
 
-@dataclass(frozen=True, order=True)
+@dataclass(order=True)
 class Node:
     name: str
     tagType: str
     path: str
+    historyEnabled: bool|dict|None = None 
     typeId: str|None = None
     expression: str|None= None
     parameters: dict|None = None
@@ -95,7 +105,6 @@ def udt_node(node: Node, path: str):
         return
 
     tag_name_set.add(node.name)
-    udt_nodes.add(tuple(node.keys()))
     # Change 
     node = type_prefix_removal(node)
     node = type_case_correction(node, path)
@@ -108,7 +117,7 @@ def udt_node(node: Node, path: str):
     if 'alarms' in node:
         alarm_udt_nodes.add(node.name)
         alarm_udt_node.append(node)
-    udt_count_dict(set(node.keys()))
+    # udt_count_dict(set(node.keys()))
 
 def udt_base_node(node: Node, path: str) -> None:
     """
@@ -131,7 +140,7 @@ def udt_base_node(node: Node, path: str) -> None:
         node.parameters = parameter_remove(node.parameters, '_Historize')
 
         parameter_dict[node.name] = {parameter for parameter in node.parameters} 
-    udt_count_dict(set(node.keys()))
+    # udt_count_dict(set(node.keys()))
 
 def folder_node(node: Node, path: str):
     """
@@ -171,40 +180,40 @@ def parameter_remove(parameters: dict, parameter: str) -> dict:
     parameters.pop(parameter, None)
     return parameters
 
-def namespace_parameter_addition(parameters: dict) -> dict:
-    parameters['namespaceFlag'] = {'dataType': 'String', 'value': 'ns'}
-    parameters['namespace'] = {'dataType': 'String', 'value': '2'}
+def namespace_parameter_addition(parameters: Parameters) -> Parameters:
+    parameters.namespaceFlag = {'dataType': 'String', 'value': 'ns'}
+    parameters.namespace = {'dataType': 'String', 'value': '2'}
     return parameters
 
-def update_opc_path(node: dict) -> dict:
-    if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
-        if isinstance(node["opcItemPath"], str):
-            node["opcItemPath"] = "{namespaceFlag}={namespace};s=" + node["opcItemPath"]
+def update_opc_path(node: Node) -> Node:
+    if node.opcItemPath is not None:
+        if isinstance(node.opcItemPath, str):
+            node.opcItemPath = "{namespaceFlag}={namespace};s=" + node.opcItemPath
         else:
-            node["opcItemPath"]["binding"] = "{namespaceFlag}={namespace};s=" + node["opcItemPath"]["binding"]
+            node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
     return node
 
-def add_min_history(node: dict, hours: int) -> dict:
+def add_min_history(node: Node, hours: int) -> Node:
     if 'historyEnabled' in node and node['historyEnabled']:
         node['historyMaxAge'] = hours
     return node
 
-def opc_path_change(node: dict, old_str: str, new_str: str) -> dict:
+def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
+    # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
     if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
         if isinstance(node["opcItemPath"], str):
             node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
-        if isinstance(node["opcItemPath"], dict):
+        if isinstance(node["opcItemPath"], Node):
             node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
     return node
 
-def history_update(node: dict) -> dict:
-    if "historyEnabled" in node:
-        if isinstance(node['historyEnabled'], dict):
-            node['historyEnabled'] = True
+def history_update(node: Node) -> Node:
+    if isinstance(node.historyEnabled, dict):
+        node.historyEnabled = True
     return node
 
-def type_prefix_removal(node: dict) -> dict:
-    node['typeId'] = node['typeId'].lstrip('[%s01]_types_/'%area)
+def type_prefix_removal(node: Node) -> Node:
+    node.typeId = node.typeId.lstrip('[%s01]_types_/'%area) # type: ignore
     return node
 
 def alarm_format(expression: str) -> str:
@@ -226,13 +235,13 @@ def alarm_format(expression: str) -> str:
             exp += ')'
         return 'if' + exp
 
-def type_case_correction(node: dict, path: str) -> dict:
+def type_case_correction(node: Node, path: str) -> Node:
     if path.startswith(area):
         udt_name_tuple = tuple(udt_name_set)
-        if node['typeId'] not in udt_name_set and node['typeId'].lower() in set(name.lower() for name in udt_name_set):
-            name_index = tuple(name.lower() for name in udt_name_tuple).index(node['typeId'].lower())
-            node['typeId'] = udt_name_tuple[name_index]
-            missing_udt_dict[path] = node['typeId']
+        if node.typeId not in udt_name_set and node.typeId.lower() in set(name.lower() for name in udt_name_set): # type: ignore
+            name_index = tuple(name.lower() for name in udt_name_tuple).index(node.typeId.lower()) # type: ignore
+            node.typeId = udt_name_tuple[name_index]
+            missing_udt_dict[path] = node.typeId
     return node
 
 def key_count() -> Callable[[set], dict]:
@@ -260,7 +269,6 @@ with open(root + '/' + file, "r") as read_file:
     tag_name_set = set() 
     folder_name_set = set() 
     tags_without_parameters = {}
-    udt_nodes = set()
     alarm_udt_nodes = set()
     alarm_udt_node = []
     udt_base_nodes = set()
@@ -275,9 +283,9 @@ with open(root + '/' + file, "r") as read_file:
 
     min_atom_set = minimum_set()    
     max_atom_set = maximum_set()
-    atom_count_dict = key_count()
-    udt_count_dict = key_count()
-    alarm_count_dict = key_count()
+    # atom_count_dict = key_count()
+    # udt_count_dict = key_count()
+    # alarm_count_dict = key_count()
     for tag in tags:
         # print(type(tag['name']))
         if tag['name'] == '_types_':
@@ -326,29 +334,28 @@ with open(root + '/' + file, "r") as read_file:
     # pprint.pprint(dict_set)
     pprint.pprint(tag_type)
     # pprint.pprint(tags_without_parameters)
-    # pprint.pprint(udt_nodes)
     # pprint.pprint(min_atom_set)
 
     # pprint.pprint(min_atom_set(set()))
     # pprint.pprint(max_atom_set(set()))
-    pprint.pprint('UDT Overwrite Instance Counts')
-    udt_counts = udt_count_dict(set())
-    udt_percents = {key: (val, round(100*val/sorted(udt_counts.values(), reverse=True)[0], 2)) for key, val in udt_counts.items()}
+    # pprint.pprint('UDT Overwrite Instance Counts')
+    # udt_counts = udt_count_dict(set())
+    # udt_percents = {key: (val, round(100*val/sorted(udt_counts.values(), reverse=True)[0], 2)) for key, val in udt_counts.items()}
     # pprint.pprint(udt_counts)
-    pprint.pprint(udt_percents)
+    # pprint.pprint(udt_percents)
     
 
-    print('')
-    pprint.pprint('Atomic Overwrite Instance Counts')
-    atom_counts = atom_count_dict(set())
-    atom_percents = {key: (val, round(100*val/sorted(atom_counts.values(), reverse=True)[0], 2)) for key, val in atom_counts.items()}
+    # print('')
+    # pprint.pprint('Atomic Overwrite Instance Counts')
+    # atom_counts = atom_count_dict(set())
+    # atom_percents = {key: (val, round(100*val/sorted(atom_counts.values(), reverse=True)[0], 2)) for key, val in atom_counts.items()}
 
     # pprint.pprint(atom_counts)
-    pprint.pprint(atom_percents)
-    print('')
-    pprint.pprint('Alarm Overwrite Instance Counts')
-    alarm_counts = alarm_count_dict(set())
-    alarm_percents = {key: (val, round(100*val/sorted(alarm_counts.values(), reverse=True)[0], 2)) for key, val in alarm_counts.items()}
+    # pprint.pprint(atom_percents)
+    # print('')
+    # pprint.pprint('Alarm Overwrite Instance Counts')
+    # alarm_counts = alarm_count_dict(set())
+    # alarm_percents = {key: (val, round(100*val/sorted(alarm_counts.values(), reverse=True)[0], 2)) for key, val in alarm_counts.items()}
 
     # pprint.pprint(atom_counts)
     # pprint.pprint(alarm_percents)
