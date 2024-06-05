@@ -2,7 +2,7 @@ import json
 import os
 from typing import Callable
 import pprint
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Union
 
 @dataclass
@@ -73,17 +73,15 @@ area = 'South'
 file = "%s tags.json"%area.lower()
 # print(os.path.abspath('south tags.json'))
 
-def atomic_node(node: Node, path: str):
+def atomic_node(node: Node):
     """
     Strategy function for atomic nodes
     """
-    # Path unused in strategy
-    _ = path
     # min_atom_set(set(node.keys()))
     # max_atom_set(set(node.keys()))
-    # if node.alarms is not None:
-    #     for alarm in node.alarms:
-    #         alarm_count_dict(set(alarm.keys()))
+    if node.alarms is not None:
+        for alarm in node.alarms:
+            alarm_count_dict(set(alarm.keys()))
     if node.expression is not None:
 
         if 'isNull' in node.expression and 'toString' in node.expression:
@@ -91,6 +89,7 @@ def atomic_node(node: Node, path: str):
             node.expression = alarm_format(node.expression) 
 
             expression_set.add(node.expression)
+            pprint.pprint(node.expression)
     # Change
     node = history_update(node)
     node = update_opc_path(node)
@@ -99,7 +98,7 @@ def atomic_node(node: Node, path: str):
     # node = add_min_history(node, 6)
     # atom_count_dict(set(node.keys()))
 
-def udt_node(node: Node, path: str):
+def udt_node(node: Node):
     """
     Strategy function for UDT nodes
     """
@@ -109,9 +108,9 @@ def udt_node(node: Node, path: str):
     tag_name_set.add(node.name)
     # Change 
     node = type_prefix_removal(node)
-    node = type_case_correction(node, path)
-    if '_types_/' in path:
-        udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
+    node = type_case_correction(node)
+    if '_types_/' in node.path:
+        udt_name_set.add(node.path.lstrip('_types_/') + '/' + node.name)
     if node.parameters is not None:
         # change
         node.parameters = parameter_change(node.parameters, '~', '_t_')
@@ -119,16 +118,16 @@ def udt_node(node: Node, path: str):
     if node.alarms is not None:
         alarm_udt_nodes.add(node.name)
         alarm_udt_node.append(node)
-    # udt_count_dict(set(node.keys()))
+    udt_count_dict(set([key for key, val in asdict(node).items() if val is not None]))
 
-def udt_base_node(node: Node, path: str) -> None:
+def udt_base_node(node: Node) -> None:
     """
     Strategy function for base UDT nodes
     """
     # if 'parameters' not in node:
     #     tags_without_parameters[node.name] = node.typeId
     # tag_name_set.add(node.name)
-    udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
+    udt_name_set.add(node.path.lstrip('_types_/') + '/' + node.name)
     # udt_base_nodes.add(tuple(node.keys()))
     if node.typeId:
         # change
@@ -142,13 +141,12 @@ def udt_base_node(node: Node, path: str) -> None:
         node.parameters = parameter_remove(node.parameters, '_Historize')
 
         parameter_dict[node.name] = {parameter for parameter in node.parameters} 
-    # udt_count_dict(set(node.keys()))
+    udt_count_dict(set([key for key, val in asdict(node).items() if val is not None]))
 
-def folder_node(node: Node, path: str):
+def folder_node(node: Node):
     """
     Strategy function for folder UDT nodes
     """
-    _ = path
     folder_name_set.add(node.name)
 
 def minimum_set() -> Callable[[set], set]:
@@ -182,9 +180,9 @@ def parameter_remove(parameters: dict, parameter: str) -> dict:
     parameters.pop(parameter, None)
     return parameters
 
-def namespace_parameter_addition(parameters: Parameters) -> Parameters:
-    parameters.namespaceFlag = {'dataType': 'String', 'value': 'ns'}
-    parameters.namespace = {'dataType': 'String', 'value': '2'}
+def namespace_parameter_addition(parameters: dict) -> dict:
+    parameters['namespaceFlag'] = {'dataType': 'String', 'value': 'ns'}
+    parameters['namespace'] = {'dataType': 'String', 'value': '2'}
     return parameters
 
 def update_opc_path(node: Node) -> Node:
@@ -199,11 +197,13 @@ def add_min_history(node: Node, hours: int) -> Node:
 
 def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
     # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
-    if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
-        if isinstance(node["opcItemPath"], str):
-            node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
-        if isinstance(node["opcItemPath"], dict):
-            node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
+    if node.opcItemPath is not None and node.valueSource == 'opc':
+        node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
+    # if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
+    #     if isinstance(node["opcItemPath"], str):
+    #         node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
+    #     if isinstance(node["opcItemPath"], dict):
+    #         node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
     return node
 
 def history_update(node: Node) -> Node:
@@ -234,13 +234,13 @@ def alarm_format(expression: str) -> str:
             exp += ')'
         return 'if' + exp
 
-def type_case_correction(node: Node, path: str) -> Node:
-    if path.startswith(area):
+def type_case_correction(node: Node) -> Node:
+    if node.path.startswith(area):
         udt_name_tuple = tuple(udt_name_set)
         if node.typeId not in udt_name_set and node.typeId.lower() in set(name.lower() for name in udt_name_set): # type: ignore
             name_index = tuple(name.lower() for name in udt_name_tuple).index(node.typeId.lower()) # type: ignore
             node.typeId = udt_name_tuple[name_index]
-            missing_udt_dict[path] = node.typeId
+            missing_udt_dict[node.path] = node.typeId
     return node
 
 def key_count() -> Callable[[set], dict]:
@@ -282,9 +282,9 @@ with open(root + '/' + file, "r") as read_file:
 
     min_atom_set = minimum_set()    
     max_atom_set = maximum_set()
-    # atom_count_dict = key_count()
-    # udt_count_dict = key_count()
-    # alarm_count_dict = key_count()
+    atom_count_dict = key_count()
+    udt_count_dict = key_count()
+    alarm_count_dict = key_count()
     for tag in tags:
         # print(type(tag['name']))
         if tag['name'] == '_types_':
@@ -301,12 +301,12 @@ with open(root + '/' + file, "r") as read_file:
             # print(node.keys())
             if not node:
                 return
-
             
             dict_set.add(tuple(node.keys()))
             tag_type.add(node['tagType'])
 
-            node = Node.from_dict(node, path)
+            # Coerce node dict + path to node dataclass object
+            node_obj = Node.from_dict(node, path)
             # print(new_node)
             node_func = {
                 'Folder': folder_node,
@@ -314,12 +314,14 @@ with open(root + '/' + file, "r") as read_file:
                 'AtomicTag': atomic_node,
                 'UdtType': udt_base_node,
             }
-            node_func[node.tagType](node, path)
-            
+            node_func[node_obj.tagType](node_obj)
+            node = {key: val for key, val in asdict(node_obj).items() if val is not None and key != 'path'}
+            path = asdict(node_obj)['path']
+          
 
             # print(node.keys())
             try: 
-                tag_branch(node.tags, path + '/' + node.name)
+                tag_branch(node['tags'], path + '/' + node['name'])
             except KeyError:
                 return node
     tag_branch(type_tags, '_types_')
@@ -337,27 +339,27 @@ with open(root + '/' + file, "r") as read_file:
 
     # pprint.pprint(min_atom_set(set()))
     # pprint.pprint(max_atom_set(set()))
-    # pprint.pprint('UDT Overwrite Instance Counts')
-    # udt_counts = udt_count_dict(set())
-    # udt_percents = {key: (val, round(100*val/sorted(udt_counts.values(), reverse=True)[0], 2)) for key, val in udt_counts.items()}
+    pprint.pprint('UDT Overwrite Instance Counts')
+    udt_counts = udt_count_dict(set())
+    udt_percents = {key: (val, round(100*val/sorted(udt_counts.values(), reverse=True)[0], 2)) for key, val in udt_counts.items()}
     # pprint.pprint(udt_counts)
-    # pprint.pprint(udt_percents)
+    pprint.pprint(udt_percents)
     
 
-    # print('')
-    # pprint.pprint('Atomic Overwrite Instance Counts')
-    # atom_counts = atom_count_dict(set())
-    # atom_percents = {key: (val, round(100*val/sorted(atom_counts.values(), reverse=True)[0], 2)) for key, val in atom_counts.items()}
+    print('')
+    pprint.pprint('Atomic Overwrite Instance Counts')
+    atom_counts = atom_count_dict(set())
+    atom_percents = {key: (val, round(100*val/sorted(atom_counts.values(), reverse=True)[0], 2)) for key, val in atom_counts.items()}
 
     # pprint.pprint(atom_counts)
-    # pprint.pprint(atom_percents)
-    # print('')
-    # pprint.pprint('Alarm Overwrite Instance Counts')
-    # alarm_counts = alarm_count_dict(set())
-    # alarm_percents = {key: (val, round(100*val/sorted(alarm_counts.values(), reverse=True)[0], 2)) for key, val in alarm_counts.items()}
+    pprint.pprint(atom_percents)
+    print('')
+    pprint.pprint('Alarm Overwrite Instance Counts')
+    alarm_counts = alarm_count_dict(set())
+    alarm_percents = {key: (val, round(100*val/sorted(alarm_counts.values(), reverse=True)[0], 2)) for key, val in alarm_counts.items()}
 
-    # pprint.pprint(atom_counts)
-    # pprint.pprint(alarm_percents)
+    pprint.pprint(atom_counts)
+    pprint.pprint(alarm_percents)
     # pprint.pprint(expression_set)
     # print(len(expression_set))
     ### Solution to updating alarms
@@ -371,8 +373,8 @@ with open(root + '/' + file, "r") as read_file:
     #     pprint.pprint(alarm_format(expression))
     #     print('-------')
     # print(len(expression_set))
-    pprint.pprint(udt_name_set)
-    pprint.pprint(missing_udt_dict)
+    # pprint.pprint(udt_name_set)
+    # pprint.pprint(missing_udt_dict)
     # pprint.pprint(alarm_udt_nodes) # corrected for north and south
     # pprint.pprint(alarm_udt_node)# corrected for north and south
     # pprint.pprint(len(alarm_udt_node))# corrected for north and south
@@ -390,6 +392,5 @@ with open(root + '/' + file, "r") as read_file:
     # print('-----------------------------------')
     # print('-----------------------------------')
     # pprint.pprint(inst_parameter_dict)
-    print(OPCItemPath('test_path').binding)
     with open('test.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=4)
