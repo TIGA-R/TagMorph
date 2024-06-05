@@ -1,37 +1,37 @@
-from _typeshed import DataclassInstance
 import json
 import os
 from typing import Callable
 import pprint
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Union
 
 @dataclass
 class OPCItemPath:
     obj: Union[str, dict]
 
     @property
-    def binding(self):
+    def binding(self) -> str:
         """The path property."""
         if isinstance(self.obj, str):
             return self.obj
         if isinstance(self.obj, dict):
             return self.obj['binding']
+        return ''
     @binding.setter
-    def binding(self, value):
+    def binding(self, value) -> None:
         if isinstance(self.obj, str):
             self.obj = value
         if isinstance(self.obj, dict):
             self.obj['binding'] = value
 
     @property
-    def bindType(self) -> Optional[str]:
+    def bindType(self) -> str|None:
         """The bindType property."""
         if isinstance(self.obj, dict):
             return self.obj['bindType']
         return None 
     @bindType.setter
-    def bindType(self, value):
+    def bindType(self, value) -> None:
         if isinstance(self.obj, dict):
             self.obj['bindType'] = value
 
@@ -50,7 +50,9 @@ class Node:
     name: str
     tagType: str
     path: str
+    valueSource: str|None = None
     historyEnabled: bool|dict|None = None 
+    historyMaxAge: int|None = None
     typeId: str|None = None
     expression: str|None= None
     parameters: dict|None = None
@@ -79,9 +81,9 @@ def atomic_node(node: Node, path: str):
     _ = path
     # min_atom_set(set(node.keys()))
     # max_atom_set(set(node.keys()))
-    if node.alarms is not None:
-        for alarm in node.alarms:
-            alarm_count_dict(set(alarm.keys()))
+    # if node.alarms is not None:
+    #     for alarm in node.alarms:
+    #         alarm_count_dict(set(alarm.keys()))
     if node.expression is not None:
 
         if 'isNull' in node.expression and 'toString' in node.expression:
@@ -95,7 +97,7 @@ def atomic_node(node: Node, path: str):
     node = opc_path_change(node, '~', '_t_')
     # removed by request - do not wish to add minimum history at this time.
     # node = add_min_history(node, 6)
-    atom_count_dict(set(node.keys()))
+    # atom_count_dict(set(node.keys()))
 
 def udt_node(node: Node, path: str):
     """
@@ -110,11 +112,11 @@ def udt_node(node: Node, path: str):
     node = type_case_correction(node, path)
     if '_types_/' in path:
         udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
-    if 'parameters' in node:
+    if node.parameters is not None:
         # change
         node.parameters = parameter_change(node.parameters, '~', '_t_')
         inst_parameter_dict[node.name] = {parameter for parameter in node.parameters} 
-    if 'alarms' in node:
+    if node.alarms is not None:
         alarm_udt_nodes.add(node.name)
         alarm_udt_node.append(node)
     # udt_count_dict(set(node.keys()))
@@ -127,14 +129,14 @@ def udt_base_node(node: Node, path: str) -> None:
     #     tags_without_parameters[node.name] = node.typeId
     # tag_name_set.add(node.name)
     udt_name_set.add(path.lstrip('_types_/') + '/' + node.name)
-    udt_base_nodes.add(tuple(node.keys()))
-    if 'typeId' in node:
+    # udt_base_nodes.add(tuple(node.keys()))
+    if node.typeId:
         # change
         node = type_prefix_removal(node)
-    if 'alarms' in node:
+    if node.alarms:
         alarm_udt_base_nodes.add(node.name)
         alarm_udt_base_node.append(node)
-    if 'parameters' in node:
+    if node.parameters:
         # change
         node.parameters = namespace_parameter_addition(parameter_change(node.parameters, '~', '_t_'))
         node.parameters = parameter_remove(node.parameters, '_Historize')
@@ -186,16 +188,13 @@ def namespace_parameter_addition(parameters: Parameters) -> Parameters:
     return parameters
 
 def update_opc_path(node: Node) -> Node:
-    if node.opcItemPath is not None:
-        if isinstance(node.opcItemPath, str):
-            node.opcItemPath = "{namespaceFlag}={namespace};s=" + node.opcItemPath
-        else:
-            node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
+    if isinstance(node.opcItemPath, OPCItemPath) and isinstance(node.opcItemPath.binding, str):
+        node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
     return node
 
 def add_min_history(node: Node, hours: int) -> Node:
-    if 'historyEnabled' in node and node['historyEnabled']:
-        node['historyMaxAge'] = hours
+    if isinstance(node.historyEnabled, bool) and node.historyEnabled:
+        node.historyMaxAge = hours
     return node
 
 def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
@@ -203,7 +202,7 @@ def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
     if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
         if isinstance(node["opcItemPath"], str):
             node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
-        if isinstance(node["opcItemPath"], Node):
+        if isinstance(node["opcItemPath"], dict):
             node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
     return node
 
@@ -320,7 +319,7 @@ with open(root + '/' + file, "r") as read_file:
 
             # print(node.keys())
             try: 
-                tag_branch(node['tags'], path + '/' + node['name'])
+                tag_branch(node.tags, path + '/' + node.name)
             except KeyError:
                 return node
     tag_branch(type_tags, '_types_')
