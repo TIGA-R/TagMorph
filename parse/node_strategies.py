@@ -1,35 +1,47 @@
-from abc import ABC, abstractmethod
+
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable
-from parse_dataclasses import Node
+from parse_dataclasses import Node, OPCItemPath
 
-class NodeStrategy(ABC):
-    node: Node
-
-    @abstractmethod
-    def process(self, process_steps: list[Callable[[Node], Node]]):
-        pass
 
 @dataclass
-class Atomic(NodeStrategy):
+class NodeStrategy:
+    node: Node
+    process_steps: list[Callable[[Node],Node]]
 
-    def process(self, process_steps):
+    def process(self):
         """
         Strategy function for atomic nodes
         """
-        # min_atom_set(set(node.keys()))
-        # max_atom_set(set(node.keys()))
-        # Change
-        for func in process_steps:
+        for func in self.process_steps:
             self.node = func(self.node)
-        # removed by request - do not wish to add minimum history at this time.
-        # node = add_min_history(node, 6)
-        # atom_count_dict(set(node.keys()))
 
-def alarm_format(node: Node, expression_set: set) -> Node:
+def key_count() -> Callable[[set], dict]:
+    """
+    Closure to build a count of keys found in dicts registered to this function
+    """
+    count_dict = {
+    }
+    def count_update(group_set: set) -> dict:
+        nonlocal count_dict
+        for i in group_set:
+            if i not in count_dict:
+                count_dict[i] = 1
+            else:
+                count_dict[i] += 1
+        return count_dict
+    return count_update
+
+def expression_format(expression_set: set, node: Node) -> Node:
+    """
+    Correcting expressions to remove isNull/toString expressions. Takes a few forms in our tags. 
+
+    Added expression_set for now to print out expressions, but likely to remove later, in favor of logging.
+    """
     if node.expression is None\
-        or 'isNull' not in node.expression\
-        or 'toString' not in node.expression:
+    or 'isNull' not in node.expression\
+    or 'toString' not in node.expression:
         return node
     expression_set.add(node.expression)
     ignore_set = {'Alarm Condition'}
@@ -53,23 +65,14 @@ def alarm_format(node: Node, expression_set: set) -> Node:
         node.expression = 'if' + exp
         return node
 
-def key_count() -> Callable[[set], dict]:
-    count_dict = {
-    }
-    def count_update(group_set: set) -> dict:
-        nonlocal count_dict
-        for i in group_set:
-            if i not in count_dict:
-                count_dict[i] = 1
-            else:
-                count_dict[i] += 1
-        return count_dict
-    return count_update
 
-def atom_count(node: Node, alarm_count: Callable) -> Node: 
+def alarm_count(key_count: Callable, node: Node) -> Node: 
+    """
+    Build count of all alarm keys
+    """
     if node.alarms is not None:
         for alarm in node.alarms:
-            alarm_count(set(alarm.keys()))
+            key_count(set(alarm.keys()))
     return node
 
 def update_opc_path(node: Node) -> Node:
@@ -82,7 +85,7 @@ def add_min_history(node: Node, hours: int) -> Node:
         node.historyMaxAge = hours
     return node
 
-def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
+def opc_path_change(old_str: str, new_str: str, node: Node) -> Node:
     # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
     if node.opcItemPath is not None and node.valueSource == 'opc':
         node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
@@ -97,3 +100,17 @@ def history_update(node: Node) -> Node:
     if isinstance(node.historyEnabled, dict):
         node.historyEnabled = True
     return node
+
+
+# alarm_count_dict = key_count()
+# expression_set = set()
+#
+# atomic_process_steps = [
+#     partial(alarm_count, alarm_count_dict),
+#     partial(expression_format, expression_set),
+#     history_update,
+#     update_opc_path,
+#     partial(opc_path_change, '~', '_t_'),
+# ]
+#
+# NodeStrategry

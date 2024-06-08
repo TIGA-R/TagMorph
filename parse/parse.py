@@ -1,9 +1,12 @@
+from functools import partial
 import json
 import os
 from typing import Callable
 import pprint
 from dataclasses import asdict
 from parse_dataclasses import OPCItemPath, Node
+from node_strategies import NodeStrategy, alarm_count, expression_format, history_update, update_opc_path, opc_path_change
+
 
 
 root = '\\'.join(os.path.dirname(os.path.realpath(__file__)).split('\\')[:-1]+['tests', 'json'])
@@ -11,30 +14,30 @@ area = 'South'
 file = "%s tags.json"%area.lower()
 # print(os.path.abspath('south tags.json'))
 
-def atomic_node(node: Node):
-    """
-    Strategy function for atomic nodes
-    """
-    # min_atom_set(set(node.keys()))
-    # max_atom_set(set(node.keys()))
-    if node.alarms is not None:
-        for alarm in node.alarms:
-            alarm_count_dict(set(alarm.keys()))
-    if node.expression is not None:
-
-        if 'isNull' in node.expression and 'toString' in node.expression:
-            # Change
-            node.expression = alarm_format(node.expression) 
-
-            expression_set.add(node.expression)
-            pprint.pprint(node.expression)
-    # Change
-    node = history_update(node)
-    node = update_opc_path(node)
-    node = opc_path_change(node, '~', '_t_')
-    # removed by request - do not wish to add minimum history at this time.
-    # node = add_min_history(node, 6)
-    # atom_count_dict(set(node.keys()))
+# def atomic_node(node: Node):
+#     """
+#     Strategy function for atomic nodes
+#     """
+#     # min_atom_set(set(node.keys()))
+#     # max_atom_set(set(node.keys()))
+#     if node.alarms is not None:
+#         for alarm in node.alarms:
+#             alarm_count_dict(set(alarm.keys()))
+#     if node.expression is not None:
+#
+#         if 'isNull' in node.expression and 'toString' in node.expression:
+#             # Change
+#             node.expression = alarm_format(node.expression) 
+#
+#             expression_set.add(node.expression)
+#             pprint.pprint(node.expression)
+#     # Change
+#     node = history_update(node)
+#     node = update_opc_path(node)
+#     node = opc_path_change(node, '~', '_t_')
+#     # removed by request - do not wish to add minimum history at this time.
+#     # node = add_min_history(node, 6)
+#     # atom_count_dict(set(node.keys()))
 
 def udt_node(node: Node):
     """
@@ -123,31 +126,31 @@ def namespace_parameter_addition(parameters: dict) -> dict:
     parameters['namespace'] = {'dataType': 'String', 'value': '2'}
     return parameters
 
-def update_opc_path(node: Node) -> Node:
-    if isinstance(node.opcItemPath, OPCItemPath) and isinstance(node.opcItemPath.binding, str):
-        node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
-    return node
+# def update_opc_path(node: Node) -> Node:
+#     if isinstance(node.opcItemPath, OPCItemPath) and isinstance(node.opcItemPath.binding, str):
+#         node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
+#     return node
 
 def add_min_history(node: Node, hours: int) -> Node:
     if isinstance(node.historyEnabled, bool) and node.historyEnabled:
         node.historyMaxAge = hours
     return node
 
-def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
-    # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
-    if node.opcItemPath is not None and node.valueSource == 'opc':
-        node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
-    # if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
-    #     if isinstance(node["opcItemPath"], str):
-    #         node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
-    #     if isinstance(node["opcItemPath"], dict):
-    #         node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
-    return node
+# def opc_path_change(node: Node, old_str: str, new_str: str) -> Node:
+#     # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
+#     if node.opcItemPath is not None and node.valueSource == 'opc':
+#         node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
+#     # if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
+#     #     if isinstance(node["opcItemPath"], str):
+#     #         node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
+#     #     if isinstance(node["opcItemPath"], dict):
+#     #         node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
+#     return node
 
-def history_update(node: Node) -> Node:
-    if isinstance(node.historyEnabled, dict):
-        node.historyEnabled = True
-    return node
+# def history_update(node: Node) -> Node:
+#     if isinstance(node.historyEnabled, dict):
+#         node.historyEnabled = True
+#     return node
 
 def type_prefix_removal(node: Node) -> Node:
     node.typeId = node.typeId.lstrip('[%s01]_types_/'%area) # type: ignore
@@ -246,13 +249,28 @@ with open(root + '/' + file, "r") as read_file:
             # Coerce node dict + path to node dataclass object
             node_obj = Node.from_dict(node, path)
             # print(new_node)
+
+            # alarm_count_dict = key_count()
+            # expression_set = set()
+
+            atomic_process_steps = [
+                partial(alarm_count, alarm_count_dict),
+                partial(expression_format, expression_set),
+                history_update,
+                update_opc_path,
+                partial(opc_path_change, '~', '_t_'),
+            ]
+
             node_func = {
                 'Folder': folder_node,
                 'UdtInstance': udt_node,
-                'AtomicTag': atomic_node,
+                'AtomicTag': NodeStrategy(node_obj, atomic_process_steps).process,
                 'UdtType': udt_base_node,
             }
-            node_func[node_obj.tagType](node_obj)
+            try:
+                node_func[node_obj.tagType](node_obj)
+            except (TypeError, ValueError):
+                node_func[node_obj.tagType]()
             node = {key: val for key, val in asdict(node_obj).items() if val is not None and key != 'path'}
             path = asdict(node_obj)['path']
           
