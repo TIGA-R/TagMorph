@@ -1,5 +1,5 @@
 import unittest
-from parse import Node
+from parse.tag_dataclasses import Node
 
 test_node: dict = {
               "opcItemPath": {

@@ -4,7 +4,7 @@ import os
 from typing import Callable
 import pprint
 from dataclasses import asdict
-from parse_dataclasses import OPCItemPath, Node
+from parse_dataclasses import Node
 from node_strategies import NodeStrategy, alarm_count, expression_format, history_update, update_opc_path, opc_path_change
 
 
@@ -247,7 +247,7 @@ with open(root + '/' + file, "r") as read_file:
             tag_type.add(node['tagType'])
 
             # Coerce node dict + path to node dataclass object
-            node_obj = Node.from_dict(node, path)
+            node_obj = Node.from_obj(node, path)
             # print(new_node)
 
             # alarm_count_dict = key_count()
