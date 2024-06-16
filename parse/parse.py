@@ -4,7 +4,7 @@ import os
 from typing import Callable
 import pprint
 from dataclasses import asdict
-from parse_dataclasses import Node
+from tag_dataclasses import Node
 from node_strategies import NodeStrategy, alarm_count, expression_format, history_update, update_opc_path, opc_path_change
 
 

@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from typing import Callable
-from .tag_dataclasses import Node, OPCItemPath
+from .tag_dataclasses import Binding, Node, OPCItemPath
 
 @dataclass
 class NodeStrategy:
@@ -14,6 +14,7 @@ class NodeStrategy:
         for func in self.process_steps:
             self.node = func(self.node)
         return self.node
+
 
 def key_count() -> Callable[[set], dict]:
     """
@@ -30,6 +31,13 @@ def key_count() -> Callable[[set], dict]:
                 count_dict[i] += 1
         return count_dict
     return count_update
+
+def return_node_unchanged(node: Node) -> Node:
+    """
+    A base strategy that performs no action - used primarily for testing
+    """
+    return node
+
 
 def expression_format(expression_set: set, node: Node) -> Node:
     """
@@ -77,7 +85,7 @@ def update_opc_path(node: Node) -> Node:
     """
     Apply OPC-UA prefix parameters to opcpath string
     """
-    if isinstance(node.opcItemPath, OPCItemPath) and isinstance(node.opcItemPath.binding, str):
+    if isinstance(node.opcItemPath, Binding) and isinstance(node.opcItemPath.binding, str):
         node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
     return node
 
@@ -94,7 +102,7 @@ def opc_path_change(old_str: str, new_str: str, node: Node) -> Node:
     Generic function to substitute opc path substring
     """
     # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
-    if node.opcItemPath is not None and node.valueSource == 'opc':
+    if node.opcItemPath is not None and node.valueSource == 'opc' and isinstance(node.opcItemPath.binding, str):
         node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
     # if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
     #     if isinstance(node["opcItemPath"], str):
@@ -103,12 +111,24 @@ def opc_path_change(old_str: str, new_str: str, node: Node) -> Node:
     #         node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
     return node
 
+def binding_change(old_str: str, new_str: str, node:Node) -> Node:
+    for field in node.binding_fields:
+        bind_field = getattr(node, field)
+        binding = bind_field.binding
+        if isinstance(binding, bool):
+            continue
+        if old_str in binding:
+            setattr(bind_field, 'binding', binding.replace(old_str, new_str))
+    return node
+
+    
+
 def history_update(node: Node) -> Node:
     """
     Eliminate historyEnabled parameter from node and modify to be strictly True
     """
     if isinstance(node.historyEnabled, dict):
-        node.historyEnabled = True
+        node.historyEnabled.binding = True
     return node
 
 def type_prefix_removal(node: Node) -> Node:

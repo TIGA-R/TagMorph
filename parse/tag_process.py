@@ -1,16 +1,17 @@
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 import json
 from .tag_dataclasses import Node
 from .node_strategies import NodeStrategy
 
+
 @dataclass
 class TagProcessor:
     file: str
-    folder_process_steps: list[Callable[[Node],Node]]
-    udtType_process_steps: list[Callable[[Node],Node]]
-    atomic_process_steps: list[Callable[[Node],Node]]
-    udtInstance_process_steps: list[Callable[[Node],Node]]
+    folder_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
+    udtType_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
+    atomic_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
+    udtInstance_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
 
 
     def __enter__(self):
@@ -19,7 +20,6 @@ class TagProcessor:
 
         tags = self.data['tags']
         for tag in tags:
-            # print(type(tag['name']))
             if tag['name'] == '_types_':
                 self.type_tags = tag['tags']
             if tag['name'] == 'South' or tag['name'] == 'North':
@@ -32,12 +32,10 @@ class TagProcessor:
             self.file_obj.close()
 
     def tag_branch(self, node, path):
-        # print(type(node))
         if isinstance(node, list):
             for i in range(len(node)):
                 self.tag_branch(node[i], path)
         if isinstance(node, dict):
-            # print(node.keys())
             if not node:
                 return
             # Coerce node dict + path to node dataclass object
@@ -53,14 +51,15 @@ class TagProcessor:
                 'UdtType': self.udtType_process_steps,
             }
             node_obj = NodeStrategy(node_obj, node_process_steps[node_obj.tagType]).process()
-            node = node_obj.to_obj()
+            updated_node, path = node_obj.to_obj()
+
+            for key in node:
+                node[key] = updated_node[key]
             # node_mods = {key: val for key, val in asdict(node_obj).items() if val is not None and key != 'path'}
             # for key, value in node_mods.items():
             #     node[key] = value
             # path = asdict(node_obj)['path']
-          
 
-            # print(node.keys())
             try: 
                 self.tag_branch(node['tags'], path + '/' + node['name'])
             except KeyError:
@@ -78,6 +77,10 @@ class TagProcessor:
 
     def to_json(self) -> str:
         return json.dumps(self.data)
+
+    def to_file(self, filepath: str) -> None:
+        with open(filepath, "w") as f:
+            json.dump(self.data, f, indent=2)
 
 if __name__ == '__main__':
     pass
