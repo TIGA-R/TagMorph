@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from typing import Callable
-from .tag_dataclasses import Binding, Node, OPCItemPath
+from .tag_dataclasses import Binding, Node, TagParameter
 
 @dataclass
 class NodeStrategy:
@@ -39,26 +39,34 @@ def return_node_unchanged(node: Node) -> Node:
     return node
 
 
-def expression_format(expression_set: set, node: Node) -> Node:
+def expression_format(
+        # expression_set: set, 
+        node: Node
+    ) -> Node:
     """
     Correcting expressions to remove isNull/toString expressions. Takes a few forms in our tags. 
 
     Added expression_set for now to print out expressions, but likely to remove later, in favor of logging.
+    (removed for now)
     """
     if node.expression is None\
     or 'isNull' not in node.expression\
     or 'toString' not in node.expression:
         return node
-    expression_set.add(node.expression)
-    ignore_set = {'Alarm Condition'}
-    for item in ignore_set:
-        if item in node.expression:
-            return node
+    # if '{[.]OPC}' in node.expression:
+    #     breakpoint()
+    # expression_set.add(node.expression)
+    # ignore_set = {'Alarm Condition'}
+    # for item in ignore_set:
+    #     if item in node.expression:
+    #         return node
     tank_set = {'Top Level', 'Interface Level', 'Tank Shut In'}
     for item in tank_set:
         if item in node.expression:
             node.expression = '\r\n'.join((line[1:] for line in node.expression.split('\r\n')[1:-1]))
             return node
+    if '{[.]OPC}' in node.expression:
+        node.expression = 'if({Alarm Condition},\r\n\tif({[.]OPC}, concat(\"1 - \", {Alarm State}), concat(\"0 - \", {Normal State})),\r\n\tif({[.]OPC}, concat(\"1 - \", {Normal State}), concat(\"0 - \", {Alarm State}))\r\n)'
     if 'Plunger Status' in node.expression:
         node.expression = 'if' + node.expression.split('if')[1] + 'if' + node.expression.split('if')[3][:-1]
         return node
@@ -70,7 +78,6 @@ def expression_format(expression_set: set, node: Node) -> Node:
             exp += ')'
         node.expression = 'if' + exp
         return node
-
 
 def alarm_count(key_count: Callable, node: Node) -> Node: 
     """
@@ -112,6 +119,9 @@ def opc_path_change(old_str: str, new_str: str, node: Node) -> Node:
     return node
 
 def binding_change(old_str: str, new_str: str, node:Node) -> Node:
+    """
+    Function for modifying all bindings inside of a tag export
+    """
     for field in node.binding_fields:
         bind_field = getattr(node, field)
         binding = bind_field.binding
@@ -121,13 +131,11 @@ def binding_change(old_str: str, new_str: str, node:Node) -> Node:
             setattr(bind_field, 'binding', binding.replace(old_str, new_str))
     return node
 
-    
-
 def history_update(node: Node) -> Node:
     """
     Eliminate historyEnabled parameter from node and modify to be strictly True
     """
-    if isinstance(node.historyEnabled, dict):
+    if node.historyEnabled is not None and node.historyEnabled.obj_type is dict:
         node.historyEnabled.binding = True
     return node
 
@@ -142,17 +150,22 @@ def type_prefix_removal(node: Node) -> Node:
 def type_case_correction(missing_udt_dict: dict, udt_name_set: set, area: str, node: Node) -> Node:
     """
     Function used to address ignition bug which does not properly apply UDTs to instances if case does not match perfectly.
-
-    TODO: Function requires testing
+        Requires processing to work in the following order: types, then instances. 
+        This is currently the preferred approach, but may need to be considered if this approach needs to change.
     """
-    if node.path.startswith(area):
-        udt_name_tuple = tuple(udt_name_set)
-        if node.typeId not in udt_name_set and node.typeId.lower() in set(name.lower() for name in udt_name_set): # type: ignore
-            name_index = tuple(name.lower() for name in udt_name_tuple).index(node.typeId.lower()) # type: ignore
-            node.typeId = udt_name_tuple[name_index]
-            missing_udt_dict[node.path] = node.typeId
     if '_types_/' in node.path:
         udt_name_set.add(node.path.lstrip('_types_/') + '/' + node.name)
+        return node
+    if node.path == '_types_':
+        return node
+    udt_name_tuple = tuple(udt_name_set)
+    if node.typeId is None:
+        return node
+    if (node.typeId not in udt_name_set 
+        and node.typeId.lower() in set(name.lower() for name in udt_name_set)):
+        name_index = tuple(name.lower() for name in udt_name_tuple).index(node.typeId.lower())        
+        node.typeId = udt_name_tuple[name_index]
+        missing_udt_dict[node.path] = node.typeId
     return node
 
 def name_addition(name_set: set, node: Node) -> Node:
@@ -178,30 +191,45 @@ def udt_count_update(udt_count: Callable, node: Node) -> Node:
     udt_count(set([key for key, val in asdict(node).items() if val is not None]))
     return node
 
-def parameter_change(inst_parameter_dict: dict, old_str: str, new_str: str, node: Node) -> Node:
+def parameter_change(old_str: str, new_str: str, node: Node) -> Node:
     """
     Replace parameter substring from old_str to new_str
     """
-    if node.parameters is not None:
-        node.parameters = {parameter.replace(old_str, new_str): val for parameter, val in node.parameters.items()}
-        inst_parameter_dict[node.name] = {parameter for parameter in node.parameters}
+    if node.parameters is None:
+        return node
+    for parameter in node.parameters:
+        parameter.name = parameter.name.replace(old_str, new_str)
+    return node
+
+# def parameter_addition(parameter_dict: dict[str, TagParameter], node: Node) -> Node:
+#     pass
+def parameters_addition(parameters: list[TagParameter], node: Node) -> Node:
+    if node.parameters is None:
+        return node
+    node.parameters += parameters
     return node
 
 def namespace_parameter_addition(node: Node) -> Node:
     """
     Adds namespace and namspaceFlag to parameter list for OPC-UA transform
     """
-    if node.parameters:
-        node.parameters['namespaceFlag'] = {'dataType': 'String', 'value': 'ns'}
-        node.parameters['namespace'] = {'dataType': 'String', 'value': '2'}
-    return node
+    namespace_list = [
+        TagParameter('namespaceFlag', 'string', 'ns'),
+        TagParameter('namespace', 'string', '2'),
+    ]
+    return parameters_addition(namespace_list, node)
+    # if node.parameters:
+    #     node.parameters['namespaceFlag'] = {'dataType': 'String', 'value': 'ns'}
+    #     node.parameters['namespace'] = {'dataType': 'String', 'value': '2'}
+    # return node
 
-def parameter_remove(parameter: str, node: Node) -> Node:
+def parameters_remove(parameters: list[str], node: Node) -> Node:
     """
     Remove parameter from tag parameter list
     """
-    if node.parameters:
-        node.parameters.pop(parameter, None)
+    if node.parameters is None:
+        return node
+    node.parameters = [parameter for parameter in node.parameters if parameter.name not in parameters]
     return node
 
 def udt_name_set_addition(udt_name_set: set, node: Node) -> Node:

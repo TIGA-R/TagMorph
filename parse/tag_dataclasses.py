@@ -6,10 +6,12 @@ class Binding:
     obj: Union[str, dict, bool]
 
     def __post_init__(self):
+        self._obj_type: Type
         if isinstance(self.obj, str) or isinstance(self.obj, bool):
             self._binding =  self.obj
         if isinstance(self.obj, dict):
             self._binding =  self.obj['binding']
+        self._obj_type = type(self.obj)
 
     @property
     def binding(self) -> str | bool:
@@ -23,6 +25,8 @@ class Binding:
 
     @binding.setter
     def binding(self, value) -> None:
+        if isinstance(value, bool):
+            self.obj_type = bool
         self._binding = value
         # if isinstance(self.obj, str) or isinstance(self.obj, bool):
         #     self.obj = value
@@ -31,7 +35,11 @@ class Binding:
 
     @property
     def obj_type(self) -> Type:
-        return type(self.obj)
+        return self._obj_type
+
+    @obj_type.setter
+    def obj_type(self, value: Type) -> None:
+        self._obj_type = value
 
     @property
     def bindType(self) -> str|None:
@@ -45,6 +53,8 @@ class Binding:
             self.obj['bindType'] = value
 
     def to_obj(self):
+        if isinstance(self.binding, bool):
+            return self.binding
         if self.obj_type is dict:
             bind_dict = {'binding': self.binding}
             if self.bindType is not None:
@@ -53,64 +63,103 @@ class Binding:
         if self.obj_type in (str, bool):
             return self.binding
 
+# @dataclass
+# class OPCItemPath:
+#     obj: Union[str, dict]
+#
+#     @property
+#     def binding(self) -> str:
+#         """The path property."""
+#         if isinstance(self.obj, str):
+#             return self.obj
+#         if isinstance(self.obj, dict):
+#             return self.obj['binding']
+#         return ''
+#     @binding.setter
+#     def binding(self, value) -> None:
+#         if isinstance(self.obj, str):
+#             self.obj = value
+#         if isinstance(self.obj, dict):
+#             self.obj['binding'] = value
+#
+#     @property
+#     def bindType(self) -> str|None:
+#         """The bindType property."""
+#         if isinstance(self.obj, dict):
+#             return self.obj['bindType']
+#         return None 
+#     @bindType.setter
+#     def bindType(self, value) -> None:
+#         if isinstance(self.obj, dict):
+#             self.obj['bindType'] = value
+#
+#     def to_obj(self):
+#         bind_dict = {'binding': self.binding}
+#         if self.bindType is not None:
+#             bind_dict['bindType'] = self.bindType
+#         return bind_dict
+
+# @dataclass(order=True)
+# class Parameters:
+#     namespace: dict|None
+#     namespaceFlag: dict|None
+#
+#     @classmethod
+#     def from_obj(cls, node_dict: dict):
+#         struct_dict = {key: val for key, val in node_dict.items() if key in cls.__annotations__}
+#         return cls(**struct_dict)
 @dataclass
-class OPCItemPath:
-    obj: Union[str, dict]
+class TagParameter:
+    name: str
+    dataType: str
+    value: int|str|Binding|None
 
-    @property
-    def binding(self) -> str:
-        """The path property."""
-        if isinstance(self.obj, str):
-            return self.obj
-        if isinstance(self.obj, dict):
-            return self.obj['binding']
-        return ''
-    @binding.setter
-    def binding(self, value) -> None:
-        if isinstance(self.obj, str):
-            self.obj = value
-        if isinstance(self.obj, dict):
-            self.obj['binding'] = value
-
-    @property
-    def bindType(self) -> str|None:
-        """The bindType property."""
-        if isinstance(self.obj, dict):
-            return self.obj['bindType']
-        return None 
-    @bindType.setter
-    def bindType(self, value) -> None:
-        if isinstance(self.obj, dict):
-            self.obj['bindType'] = value
-
-    def to_obj(self):
-        bind_dict = {'binding': self.binding}
-        if self.bindType is not None:
-            bind_dict['bindType'] = self.bindType
-        return bind_dict
-
-@dataclass(order=True)
-class Parameters:
-    namespace: dict|None
-    namespaceFlag: dict|None
-
+    def to_obj(self) -> tuple[str, dict]:
+        return_dict = {'dataType': self.dataType}
+        if self.value is None:
+            pass
+        elif isinstance(self.value, int) or isinstance(self.value, str):
+            return_dict['value'] = self.value # type: ignore
+        elif isinstance(self.value, Binding):
+            return_dict['value'] = self.value.to_obj() # type: ignore
+        # if self.value is not None:
+        #     if isinstance(self.value):
+        #     type_dict = {
+        #     int: self.value,
+        #     str: self.value,
+        #     Binding: self.value.to_obj(), # type: ignore
+        #     }
+        #     return_dict['value'] = type_dict[type(self.value)]
+        return (self.name, return_dict)
+    
     @classmethod
-    def from_obj(cls, node_dict: dict):
-        struct_dict = {key: val for key, val in node_dict.items() if key in cls.__annotations__}
-        return cls(**struct_dict)
+    def from_obj(cls, parameter_name: str, parameter_dict: dict) -> Self:
+        name = parameter_name
+        dataType = parameter_dict['dataType']
+        val = parameter_dict.get('value')
+        if val is not None:
+            type_dict = {
+            int: val,
+            str: val,
+            dict: Binding(val),
+            }
+            value = type_dict[type(val)]
+            return cls(name, dataType, value)
+        return cls(name, dataType, None)
 
 @dataclass(order=True)
 class Node:
     path: str
     name: str = field(default_factory=str)
     tagType: str = field(default_factory=str)
+    dataType: str|None = None
     valueSource: str|None = None
     enabled: Binding|None = None
     historyEnabled: Binding|None = None 
     historyMaxAge: int|None = None
     typeId: str|None = None
     expression: str|None= None
-    parameters: dict|None = None
+    parameters: list[TagParameter]|None = None
     alarms: dict|None = None
     opcItemPath: Binding|None = None
     tags: dict|None = None
@@ -127,9 +176,18 @@ class Node:
         """
         Construct Node object from a json tag provider object
         """
-        struct_dict = {key: val if 'Binding' not in str(cls.__annotations__[key]) else Binding(val) for key, val in node_dict.items() 
+        struct_dict = {key: val 
+            if 'Binding' not in str(cls.__annotations__[key]) 
+            else Binding(val) 
+            for key, val in node_dict.items() 
             if key in cls.__annotations__ 
+            and key != 'parameters'
             }
+        if 'parameters' in node_dict:
+            struct_dict['parameters'] = [
+                TagParameter.from_obj(node_name, node_val) 
+                for node_name, node_val in node_dict['parameters'].items()
+            ] 
         struct_dict['_extras'] = {key: val for key, val in node_dict.items() if key not in cls.__annotations__}
         return cls(path=path, **struct_dict) #type:ignore
 
@@ -142,5 +200,7 @@ class Node:
             and key not in self.exceptions}
         if self.opcItemPath is not None:
             data_dict['opcItemPath'] = self.opcItemPath.to_obj()
+        if self.parameters is not None:
+            data_dict['parameters'] = {parameter.to_obj()[0]: parameter.to_obj()[1] for parameter in self.parameters}
         return (data_dict | self._extras, self.path)
 

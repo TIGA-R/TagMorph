@@ -8,6 +8,7 @@ from .node_strategies import NodeStrategy
 @dataclass
 class TagProcessor:
     file: str
+    instance_base_folder_name: str
     folder_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
     udtType_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
     atomic_process_steps: list[Callable[[Node],Node]] = field(default_factory=list)
@@ -22,7 +23,7 @@ class TagProcessor:
         for tag in tags:
             if tag['name'] == '_types_':
                 self.type_tags = tag['tags']
-            if tag['name'] == 'South' or tag['name'] == 'North':
+            if tag['name'] == self.instance_base_folder_name:
                 self.area_tags = tag['tags']
         return self
 
