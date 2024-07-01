@@ -76,9 +76,10 @@ if __name__ == '__main__':
 
     # from tests.test_node import test_json_unchanged
     # test_json_unchanged()
-    from tests.test_node import test_tilde_removed_from_file, test_case_correction, test_expression_format_success
+    from tests.test_node import test_tilde_removed_from_file, test_case_correction, test_expression_format_success, test_type_node_dict
     # test_case_correction()
-    test_expression_format_success()
+    # test_expression_format_success()
+    test_type_node_dict()
     # node = Node('testname', 'testTagType', 'testPath')
     # for f in fields(node):
     #     # print(type(f))

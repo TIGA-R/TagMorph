@@ -26,7 +26,7 @@ test_node: dict = {
 
 class NodeTest(unittest.TestCase):
     def test_name(self):
-        self.assertEqual(test_node['name'], Node.from_obj(test_node, '').name)
+        self.assertEqual(test_node['name'], Node.from_obj(test_node, '', id=1, node_id_log={}).name)
 
 if __name__ == '__main__':
     unittest.main()

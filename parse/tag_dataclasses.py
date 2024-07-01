@@ -1,5 +1,20 @@
-from typing import Self, Type, Union
+from typing import Literal, Self, Type, Union
 from dataclasses import asdict, dataclass, field, fields
+
+type ValueSource = Literal[
+        'opc',
+        'expr',
+        'reference',
+        'memory',
+        'db',
+        None,
+    ]
+type TagType = Literal[
+        'AtomicTag', 
+        'Folder', 
+        'UdtType', 
+        'UdtInstance',
+    ]
 
 @dataclass
 class Binding:
@@ -150,10 +165,12 @@ class TagParameter:
 @dataclass(order=True)
 class Node:
     path: str
+    id: int 
+    id_log: list[tuple[int, TagType]]
     name: str = field(default_factory=str)
-    tagType: str = field(default_factory=str)
+    tagType: TagType = field(default_factory=str) #type: ignore
     dataType: str|None = None
-    valueSource: str|None = None
+    valueSource: ValueSource = None
     enabled: Binding|None = None
     historyEnabled: Binding|None = None 
     historyMaxAge: int|None = None
@@ -166,13 +183,20 @@ class Node:
     _extras: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        self.exceptions = ['opcItemPath', '_extras', 'path']
+        self.exceptions = ['opcItemPath', '_extras', 'path', 'id', 'id_log']
         self.binding_fields = (field_inst.name 
             for field_inst in fields(self) 
             if isinstance(getattr(self,field_inst.name), Binding))
 
     @classmethod
-    def from_obj(cls, node_dict: dict, path: str) -> Self:
+    def from_obj(
+        cls, 
+        node_dict: dict,
+        path: str, 
+        id: int, 
+        id_log: list[tuple[int, TagType]],
+    ) -> Self:
+
         """
         Construct Node object from a json tag provider object
         """
@@ -189,13 +213,16 @@ class Node:
                 for node_name, node_val in node_dict['parameters'].items()
             ] 
         struct_dict['_extras'] = {key: val for key, val in node_dict.items() if key not in cls.__annotations__}
-        return cls(path=path, **struct_dict) #type:ignore
+        return cls(id=id, path=path, id_log=id_log, **struct_dict) #type:ignore
 
     def to_obj(self) -> tuple[dict, str]:
         """
         return Node object to json-style dict + path string
         """
-        data_dict = {key: val if 'Binding' not in str(self.__annotations__[key]) else getattr(self, key).to_obj() for key, val in asdict(self).items()
+        data_dict = {key: val 
+            if 'Binding' not in str(self.__annotations__[key]) 
+            else getattr(self, key).to_obj() 
+            for key, val in asdict(self).items()
             if val is not None
             and key not in self.exceptions}
         if self.opcItemPath is not None:

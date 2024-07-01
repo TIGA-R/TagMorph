@@ -1,9 +1,10 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
-from .tag_dataclasses import Node
+from .tag_dataclasses import Node, TagType
 from .node_strategies import NodeStrategy
 
+type IDEntry = tuple[int, TagType]
 
 @dataclass
 class TagProcessor:
@@ -18,6 +19,7 @@ class TagProcessor:
     def __enter__(self):
         self.file_obj = open(self.file, mode="r")
         self.data = json.load(self.file_obj)
+        self.id = 0
 
         tags = self.data['tags']
         for tag in tags:
@@ -32,15 +34,16 @@ class TagProcessor:
         if self.file_obj:
             self.file_obj.close()
 
-    def tag_branch(self, node, path):
+    def tag_branch(self, node, path, id_log: list[IDEntry]):
         if isinstance(node, list):
             for i in range(len(node)):
-                self.tag_branch(node[i], path)
+                self.tag_branch(node[i], path, id_log)
         if isinstance(node, dict):
             if not node:
                 return
+            self.id += 1
             # Coerce node dict + path to node dataclass object
-            node_obj = Node.from_obj(node, path)
+            node_obj = Node.from_obj(node, path, self.id, id_log)
 
             if node_obj.tagType == 'UdtInstance' and node_obj.typeId is None:
                 return
@@ -51,7 +54,10 @@ class TagProcessor:
                 'AtomicTag': self.atomic_process_steps,
                 'UdtType': self.udtType_process_steps,
             }
-            node_obj = NodeStrategy(node_obj, node_process_steps[node_obj.tagType]).process()
+            node_obj = NodeStrategy(
+            node_obj, 
+            node_process_steps[node_obj.tagType],
+            ).process()
             updated_node, path = node_obj.to_obj()
 
             for key in node:
@@ -62,15 +68,21 @@ class TagProcessor:
             # path = asdict(node_obj)['path']
 
             try: 
-                self.tag_branch(node['tags'], path + '/' + node['name'])
+                self.tag_branch(
+                    node['tags'], 
+                    path + '/' + node['name'], 
+                    id_log + [(self.id, node_obj.tagType),]
+                    if node_obj.tagType != 'Folder'
+                    else id_log,
+                )
             except KeyError:
                 return node
     
     def process_types(self):
-        self.tag_branch(self.type_tags, '_types_')
+        self.tag_branch(self.type_tags, '_types_', [])
 
     def process_tags(self):
-        self.tag_branch(self.area_tags, '')
+        self.tag_branch(self.area_tags, '', [])
     
     def process(self):
         self.process_types()

@@ -2,10 +2,25 @@ import pathlib
 from functools import partial
 from parse.tag_dataclasses import Node, Binding
 from parse.tag_process import TagProcessor
-from parse.node_strategies import binding_change, expression_format, history_update, namespace_parameter_addition, opc_path_change, parameter_change, parameters_remove, type_case_correction, type_prefix_removal, update_opc_path
+from parse.node_strategies import (
+    binding_change, 
+    expression_format, 
+    history_update,
+    namespace_parameter_addition, 
+    opc_path_change,
+    opc_tag_dict_build, 
+    parameter_change, 
+    parameters_remove,
+    type_case_wrapper,
+    type_dict_build, 
+    type_prefix_removal,
+    udt_instance_dict_build, 
+    update_opc_path,
+)
+from analyze.relationships import build_child_parent, get_children, get_parents, opc_tag_list_build
 
 path = str(pathlib.Path(__file__).parent.resolve()) + '/json/'
-single_site_file = 'Briscoe Alpha Tags Condensed.json'
+single_site_file = 'simple single site tags.json'
 single_well_file = 'single well tags.json'
 south_site_file = 'South tags.json'
 area = 'South'
@@ -62,7 +77,12 @@ def assert_tagpath_has_prepend( node: Node) -> Node:
     return node
 
 def test_single_site_file_prepend():
-    setup_json_changed_tagpath(path+single_site_file, 'tagprepend.json', update_opc_path, assert_tagpath_has_prepend)
+    setup_json_changed_tagpath(
+        path+single_site_file,
+         'tagprepend.json',
+         update_opc_path,
+         assert_tagpath_has_prepend,
+    )
 
 ### Slow test. Run only sparingly ###
 # def test_south_site_file_prepend():
@@ -75,10 +95,22 @@ def assert_tagpath_has_no_tilde( node: Node) -> Node:
     return node
 
 def test_single_site_file_no_tilde():
-    setup_json_changed_tagpath(path+single_site_file, 'singletilde.json', partial(opc_path_change, '~', '_t_'), assert_tagpath_has_no_tilde)
+    setup_json_changed_tagpath(
+        path+single_site_file,
+         'singletilde.json',
+         partial(opc_path_change,
+         '~', '_t_'), assert_tagpath_has_no_tilde
+    )
 
 def test_binding_return_fields():
-    node = Node('test', 'test', 'test', enabled=Binding({'binding': True}))
+    node = Node(
+        path='test',
+        id=1, 
+        id_log=[], 
+        name='test', 
+        tagType='UdtInstance', 
+        enabled=Binding({'binding': True}),
+    )
     assert [field for field in node.binding_fields] == ['enabled',]
 
 def test_tilde_removed_from_bindings():
@@ -155,25 +187,37 @@ def test_type_prefix_removal():
 
 def test_case_correction():
     missing_udt_dict = {}
-    udt_name_set = set()
+    type_case_correction = type_case_wrapper()
     with TagProcessor(
         path+single_site_file,
         area,
-        atomic_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
-        udtInstance_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
-        udtType_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
+        atomic_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
+        udtInstance_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
+        udtType_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
     ) as processor:
         processor.process()
         processor.to_file(path + 'case_correction.json')
     assert missing_udt_dict
     missing_udt_dict = {}
-    udt_name_set = set()
+    type_case_correction = type_case_wrapper()
     with TagProcessor(
         path+'case_correction.json',
         area,
-        atomic_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
-        udtInstance_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
-        udtType_process_steps = [partial(type_case_correction, missing_udt_dict, udt_name_set, area),],
+        atomic_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
+        udtInstance_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
+        udtType_process_steps = [
+            partial(type_case_correction, missing_udt_dict),
+        ],
     ) as processor:
         processor.process()
     assert not missing_udt_dict
@@ -244,3 +288,82 @@ def test_expression_format_success():
         for line in f:
             assert 'isNull' not in line
             assert 'toString' not in line
+
+def test_type_node_dict():
+    type_dict = {}
+    name_dict = {}
+    type_case_correction = type_case_wrapper()
+    missing_udt_dict = {}
+    import time
+    start = time.time()
+    opc_dict = {}
+    udt_inst_dict = {}
+
+    with TagProcessor(
+        path+south_site_file,
+        area,
+        atomic_process_steps = [
+            # increment_id,
+            partial(opc_tag_dict_build, opc_dict),
+            type_prefix_removal,
+        ],
+        udtInstance_process_steps = [
+            # increment_id,
+            type_prefix_removal,
+            partial(type_case_correction, missing_udt_dict),
+            partial(udt_instance_dict_build, udt_inst_dict),
+            partial(type_dict_build, name_dict, type_dict),
+        ],
+        udtType_process_steps = [
+            # increment_id,
+            type_prefix_removal,
+            partial(type_case_correction, missing_udt_dict),
+            partial(type_dict_build, name_dict, type_dict),
+        ],
+    ) as processor:
+        processor.process()
+
+    mid = time.time()
+
+    import pprint
+    # pprint.pprint(type_dict)
+    pc_dict = build_child_parent(type_dict, name_dict)
+    # pprint.pprint(type_dict)
+
+
+    # pprint.pprint({key: val 
+    #               for key, val in opc_dict.items()
+    #               if 1726 in val[1]['UdtType']})
+    # pprint.pprint(opc_dict)
+    # pprint.pprint(type_dict[1726])
+    # pprint.pprint(type_dict[1052])
+
+    # pprint.pprint(udt_inst_dict)
+
+    opc_tag_list = opc_tag_list_build(opc_dict, udt_inst_dict, pc_dict)
+    pprint.pprint(opc_tag_list)
+    import sqlite3
+    with sqlite3.connect("C:\\Users\\Public\\Documents\\output2") as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS opc_tags (id int,  tagpath TEXT NOT NULL);""")
+        for idx, line in enumerate(opc_tag_list):
+            sql = """insert into opc_tags(id, tagpath) values(?, ?)"""
+            # print(line)
+            c.execute(sql, (idx, line,))
+        conn.commit()
+    # with open(path+'output.txt', 'w') as f:
+    #     for line in opc_tag_list:
+    #         f.write(line + '\n')
+
+
+
+    # children = get_children(142, pc_dict)
+    # parents = get_parents(142, pc_dict)
+    # print(parents)
+    # parents = get_parents(134, pc_dict)
+    # print(children)
+    # print(parents)
+    finish = time.time()
+    print(f"Time to process: {mid-start} s")
+    print(f"Time to map: {finish-mid} s")
+    assert True

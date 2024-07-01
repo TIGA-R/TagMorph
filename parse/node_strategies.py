@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from typing import Callable
-from .tag_dataclasses import Binding, Node, TagParameter
+from .tag_dataclasses import Binding, Node, TagParameter, TagType
 
 @dataclass
 class NodeStrategy:
@@ -65,6 +65,7 @@ def expression_format(
         if item in node.expression:
             node.expression = '\r\n'.join((line[1:] for line in node.expression.split('\r\n')[1:-1]))
             return node
+    # Hard-coded fix to edge case
     if '{[.]OPC}' in node.expression:
         node.expression = 'if({Alarm Condition},\r\n\tif({[.]OPC}, concat(\"1 - \", {Alarm State}), concat(\"0 - \", {Normal State})),\r\n\tif({[.]OPC}, concat(\"1 - \", {Normal State}), concat(\"0 - \", {Alarm State}))\r\n)'
     if 'Plunger Status' in node.expression:
@@ -147,26 +148,34 @@ def type_prefix_removal(node: Node) -> Node:
         node.typeId = node.typeId.split(']_types_/')[1] if ']_types_/' in node.typeId else node.typeId
     return node
 
-def type_case_correction(missing_udt_dict: dict, udt_name_set: set, area: str, node: Node) -> Node:
+def type_case_wrapper() -> Callable:
     """
     Function used to address ignition bug which does not properly apply UDTs to instances if case does not match perfectly.
         Requires processing to work in the following order: types, then instances. 
         This is currently the preferred approach, but may need to be considered if this approach needs to change.
     """
-    if '_types_/' in node.path:
-        udt_name_set.add(node.path.lstrip('_types_/') + '/' + node.name)
+    udt_name_set = set()
+    def type_case_correction(
+        missing_udt_dict: dict,
+        node: Node,
+    ) -> Node:
+        nonlocal udt_name_set
+        if '_types_/' in node.path:
+            udt_name_set.add(node.path.lstrip('_types_/') + '/' + node.name)
+            return node
+        if node.path == '_types_':
+            return node
+        udt_name_tuple = tuple(udt_name_set)
+        if node.typeId is None:
+            return node
+        if (node.typeId not in udt_name_set 
+            and node.typeId.lower() in set(name.lower() for name in udt_name_set)):
+            name_index = tuple(name.lower() 
+                for name in udt_name_tuple).index(node.typeId.lower())        
+            node.typeId = udt_name_tuple[name_index]
+            missing_udt_dict[node.path] = node.typeId
         return node
-    if node.path == '_types_':
-        return node
-    udt_name_tuple = tuple(udt_name_set)
-    if node.typeId is None:
-        return node
-    if (node.typeId not in udt_name_set 
-        and node.typeId.lower() in set(name.lower() for name in udt_name_set)):
-        name_index = tuple(name.lower() for name in udt_name_tuple).index(node.typeId.lower())        
-        node.typeId = udt_name_tuple[name_index]
-        missing_udt_dict[node.path] = node.typeId
-    return node
+    return type_case_correction
 
 def name_addition(name_set: set, node: Node) -> Node:
     """
@@ -245,5 +254,39 @@ def alarm_udt_base_tracking(alarm_udt_base_nodes: set, alarm_udt_base_node: list
     """
     alarm_udt_base_nodes.add(node.name)
     alarm_udt_base_node.append(node)
+    return node
+
+def type_dict_build(
+        name_dict: dict[str, int], 
+        type_dict: dict[int, tuple[str, str, str, str]], # name, tag type, type ID, path
+        node: Node
+    ) -> Node:
+    if node.tagType == 'AtomicTag':
+        return node
+    if node.typeId is not None:
+        type_dict[node.id] = (node.name, node.tagType, node.typeId, node.path)
+        name_dict[node.path.lstrip('_types_/') + '/' + node.name] = node.id
+    else:
+        type_dict[node.id] = (node.name, node.tagType, '', node.path)
+        name_dict[node.path.lstrip('_types_/') + '/' + node.name] = node.id
+    return node
+
+def opc_tag_dict_build(opc_dict: dict[int, tuple[str, int]], node: Node) -> Node:
+    if node.tagType == 'AtomicTag' and node.valueSource == 'opc':
+        # opc_dict[node.id] = (node.path + '/' + node.name, node.id_log)
+        opc_dict[node.id] = (node.name, node.id_log[0][0])
+    return node
+
+def udt_instance_dict_build(
+    udt_inst_dict: dict[int, str],
+    node: Node,
+) -> Node:
+    if node.tagType == 'UdtInstance' and (node.enabled is None or node.enabled.binding):
+        udt_inst_dict[node.id] = (node.path + '/' + node.name)
+    return node
+
+def print_node(node_num: int, node: Node) -> Node:
+    if node.id == node_num:
+        print((node.id, node.path + '/' + node.name))
     return node
 
