@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 from typing import Callable
 from .tag_dataclasses import Binding, Node, TagParameter, TagType, ValueSource
+from itertools import permutations
 import logging
 
 type OldString = str
@@ -118,7 +119,16 @@ def opc_path_change(replace_dict: dict[OldString, NewString], node: Node) -> Nod
         for old_str, new_str in replace_dict.items():
             if not old_str in node.opcItemPath.binding:
                 continue
-            node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
+            if new_str in node.opcItemPath.binding:
+                continue
+            prefix_in = False
+            for perm in permutations(('_t_', '_p_', '_e_'), 2):
+                if new_str.replace(perm[0], perm[1]) in node.opcItemPath.binding:
+                    prefix_in = True
+                    break
+            if prefix_in:
+                continue
+            node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str).replace('__', '_')
     return node
 
 def binding_change(replace_dict: dict[OldString, NewString], node:Node) -> Node:
@@ -131,8 +141,17 @@ def binding_change(replace_dict: dict[OldString, NewString], node:Node) -> Node:
         if isinstance(binding, bool):
             continue
         for old_str, new_str in replace_dict.items():
-            if old_str in binding:
-                setattr(bind_field, 'binding', binding.replace(old_str, new_str))
+            if old_str in binding \
+            and new_str not in binding:
+                prefix_in = False
+                for perm in permutations(('_t_', '_p_', '_e_'), 2):
+                    if new_str.replace(perm[0], perm[1]) in binding:
+                        prefix_in = True
+                        break
+                if prefix_in:
+                    continue
+                binding = binding.replace(old_str, new_str).replace('__', '_')
+        setattr(bind_field, 'binding', binding)
     return node
 
 def history_update(node: Node) -> Node:
@@ -230,11 +249,27 @@ def parameter_change(replace_dict: dict[OldString, NewString], node: Node) -> No
             and isinstance(parameter.value.binding, str) \
             and old_str in parameter.value.binding \
             and new_str not in parameter.value.binding:
-                parameter.value.binding = parameter.value.binding.replace(old_str, new_str)
+                prefix_in = False
+                for perm in permutations(('_t_', '_p_', '_e_'), 2):
+                    if new_str.replace(perm[0], perm[1]) in parameter.value.binding:
+                        prefix_in = True
+                        break
+                if prefix_in:
+                    continue
+                parameter.value.binding = parameter.value.binding.replace(old_str, new_str).replace('__', '_')
+            
             if isinstance(parameter.value, str) \
             and old_str in parameter.value \
             and new_str not in parameter.value:
-                parameter.value = parameter.value.replace(old_str, new_str)
+                prefix_in = False
+                for perm in permutations(('_t_', '_p_', '_e_'), 2):
+                    if new_str.replace(perm[0], perm[1]) in parameter.value:
+                        prefix_in = True
+                        break
+                if prefix_in:
+                    continue
+                parameter.value = parameter.value.replace(old_str, new_str).replace('__', '_')
+
     return node
 
 def parameters_addition(parameters: list[TagParameter], node: Node) -> Node:

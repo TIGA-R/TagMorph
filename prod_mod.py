@@ -99,6 +99,7 @@ parameter_change_dict = {
     '_Meter Num': '_e_Meter Num',
     '_PID Num': '_e_PID Num',
     '_PMeq': '_e_PMeq',
+    '_Pmeq': '_e_PMeq',
     '_Pump Adder': '_p_Pump Adder',
     '_Pump Num': '_e_Pump Num',
     '_Reg Space': '_e_Reg Space',
@@ -206,8 +207,6 @@ parameter_change_dict = {
     '__Weighted Average Pressure Prev Mnth': '_t_Weighted Average Pressure Prev Mnth',
     '__Weighted Average Temperature Prev Mnth': '_t_Weighted Average Temperature Prev Mnth',
     '__': '_',
-    '_t_p_': '_t_',
-    '_e_e_': '_e_',
 }
 
 if __name__ == '__main__':
@@ -215,36 +214,36 @@ if __name__ == '__main__':
     missing_udt_dict = {}
     import time
     start = time.time()
-    build_audit_tag_table(
-        atomic_value_source='expr',
-        source_file=path+north_site_file,
-        area='North',
-        db=path+'july_11_2024_tag_audit',
-        table='north_expr_tags',
-        columns={
-            'original_local': 'TEXT',
-            'modified_local': 'TEXT',
-            'original_dev': 'TEXT',
-            'modified_dev': 'TEXT',
-            'original_prod': 'TEXT',
-            'modified_prod': 'TEXT',
-        },
-    )
-    build_audit_tag_table(
-        atomic_value_source='opc',
-        source_file=path+north_site_file,
-        area='North',
-        db=path+'july_11_2024_tag_audit',
-        table='north_opc_tags',
-        columns={
-            'original_local': 'TEXT',
-            'modified_local': 'TEXT',
-            'original_dev': 'TEXT',
-            'modified_dev': 'TEXT',
-            'original_prod': 'TEXT',
-            'modified_prod': 'TEXT',
-        },
-    )
+    # build_audit_tag_table(
+    #     atomic_value_source='expr',
+    #     source_file=path+north_site_file,
+    #     area='North',
+    #     db=path+'july_11_2024_tag_audit',
+    #     table='north_expr_tags',
+    #     columns={
+    #         'original_local': 'TEXT',
+    #         'modified_local': 'TEXT',
+    #         'original_dev': 'TEXT',
+    #         'modified_dev': 'TEXT',
+    #         'original_prod': 'TEXT',
+    #         'modified_prod': 'TEXT',
+    #     },
+    # )
+    # build_audit_tag_table(
+    #     atomic_value_source='opc',
+    #     source_file=path+north_site_file,
+    #     area='North',
+    #     db=path+'july_11_2024_tag_audit',
+    #     table='north_opc_tags',
+    #     columns={
+    #         'original_local': 'TEXT',
+    #         'modified_local': 'TEXT',
+    #         'original_dev': 'TEXT',
+    #         'modified_dev': 'TEXT',
+    #         'original_prod': 'TEXT',
+    #         'modified_prod': 'TEXT',
+    #     },
+    # )
 
     with TagProcessor(
         path+north_site_file,
