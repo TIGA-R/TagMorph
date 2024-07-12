@@ -70,7 +70,7 @@ class TagProcessor:
             try: 
                 self.tag_branch(
                     node['tags'], 
-                    path + '/' + node['name'], 
+                    path + '/' + node['name'] if path else node['name'], # if statement prevents initial / at beginning of path 
                     id_log + [(self.id, node_obj.tagType),]
                     if node_obj.tagType != 'Folder'
                     else id_log,

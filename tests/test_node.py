@@ -1,14 +1,15 @@
 import pathlib
 from functools import partial
-from parse.tag_dataclasses import Node, Binding
+from parse.tag_dataclasses import Node, Binding, ValueSource
 from parse.tag_process import TagProcessor
 from parse.node_strategies import (
     binding_change, 
     expression_format, 
     history_update,
+    match_parameter_addition,
     namespace_parameter_addition, 
     opc_path_change,
-    opc_tag_dict_build, 
+    atom_tag_dict_build, 
     parameter_change, 
     parameters_remove,
     type_case_wrapper,
@@ -17,12 +18,17 @@ from parse.node_strategies import (
     udt_instance_dict_build, 
     update_opc_path,
 )
-from analyze.relationships import build_child_parent, get_children, get_parents, opc_tag_list_build
+from analyze.relationships import SqliteDatatype, build_child_parent, build_test_database, atom_tag_gen_build
+from rich.traceback import install
+
+install()
 
 path = str(pathlib.Path(__file__).parent.resolve()) + '/json/'
 single_site_file = 'simple single site tags.json'
+original_single_site_file = 'single site tags.json'
 single_well_file = 'single well tags.json'
 south_site_file = 'South tags.json'
+north_site_file = 'North tags.json'
 area = 'South'
 
 ### Too slow. Redesign if needed ###
@@ -98,8 +104,8 @@ def test_single_site_file_no_tilde():
     setup_json_changed_tagpath(
         path+single_site_file,
          'singletilde.json',
-         partial(opc_path_change,
-         '~', '_t_'), assert_tagpath_has_no_tilde
+         partial(opc_path_change, {'~': '_t_'}), 
+        assert_tagpath_has_no_tilde
     )
 
 def test_binding_return_fields():
@@ -117,9 +123,9 @@ def test_tilde_removed_from_bindings():
     with TagProcessor(
         path+single_site_file,
         area,
-        atomic_process_steps = [partial(binding_change,'~', '_t_'),],
-        udtInstance_process_steps = [partial(binding_change,'~', '_t_'),],
-        udtType_process_steps = [partial(binding_change,'~', '_t_'),],
+        atomic_process_steps = [partial(binding_change, {'~': '_t_'}),],
+        udtInstance_process_steps = [partial(binding_change, {'~': '_t_'}),],
+        udtType_process_steps = [partial(binding_change, {'~': '_t_'}),],
     ) as processor:
         processor.process()
         processor.to_file(path + 'bindingtest.json')
@@ -132,16 +138,16 @@ def test_tilde_removed_from_file():
         path+single_site_file,
         area,
         atomic_process_steps = [
-            partial(binding_change,'~', '_t_'),
-            partial(parameter_change,'~', '_t_'),
+            partial(binding_change, {'~': '_t_'}),
+            partial(parameter_change, {'~': '_t_'}),
             ],
         udtInstance_process_steps = [
-            partial(binding_change,'~', '_t_'),
-            partial(parameter_change,'~', '_t_'),
+            partial(binding_change, {'~': '_t_'}),
+            partial(parameter_change, {'~': '_t_'}),
             ],
         udtType_process_steps = [
-            partial(binding_change,'~', '_t_'),
-            partial(parameter_change,'~', '_t_'),
+            partial(binding_change, {'~': '_t_'}),
+            partial(parameter_change, {'~': '_t_'}),
             ],
     ) as processor:
         processor.process()
@@ -189,7 +195,7 @@ def test_case_correction():
     missing_udt_dict = {}
     type_case_correction = type_case_wrapper()
     with TagProcessor(
-        path+single_site_file,
+        path+original_single_site_file,
         area,
         atomic_process_steps = [
             partial(type_case_correction, missing_udt_dict),
@@ -296,7 +302,7 @@ def test_type_node_dict():
     missing_udt_dict = {}
     import time
     start = time.time()
-    opc_dict = {}
+    atom_dict = {}
     udt_inst_dict = {}
 
     with TagProcessor(
@@ -304,7 +310,7 @@ def test_type_node_dict():
         area,
         atomic_process_steps = [
             # increment_id,
-            partial(opc_tag_dict_build, opc_dict),
+            partial(atom_tag_dict_build, atom_dict, 'expr'),
             type_prefix_removal,
         ],
         udtInstance_process_steps = [
@@ -332,25 +338,32 @@ def test_type_node_dict():
 
 
     # pprint.pprint({key: val 
-    #               for key, val in opc_dict.items()
+    #               for key, val in atom_dict.items()
     #               if 1726 in val[1]['UdtType']})
-    # pprint.pprint(opc_dict)
+    # pprint.pprint(atom_dict)
     # pprint.pprint(type_dict[1726])
     # pprint.pprint(type_dict[1052])
 
     # pprint.pprint(udt_inst_dict)
 
-    opc_tag_list = opc_tag_list_build(opc_dict, udt_inst_dict, pc_dict)
-    pprint.pprint(opc_tag_list)
-    import sqlite3
-    with sqlite3.connect("C:\\Users\\Public\\Documents\\output2") as conn:
-        c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS opc_tags (id int,  tagpath TEXT NOT NULL);""")
-        for idx, line in enumerate(opc_tag_list):
-            sql = """insert into opc_tags(id, tagpath) values(?, ?)"""
-            # print(line)
-            c.execute(sql, (idx, line,))
-        conn.commit()
+    atom_tag_gen = atom_tag_gen_build(atom_dict, udt_inst_dict, pc_dict)
+    # pprint.pprint(atom_tag_gen)
+    
+    build_test_database(
+    file_path="C:\\Users\\Public\\Documents\\output4",
+    table_name="expression_tags",
+    data_generator=atom_tag_gen,
+    ) 
+    # import sqlite3
+    # with sqlite3.connect("C:\\Users\\Public\\Documents\\output2") as conn:
+    #     c = conn.cursor()
+    #     c.execute("""CREATE TABLE IF NOT EXISTS opc_tags (id int,  tagpath TEXT NOT NULL);""")
+    #     for idx, line in enumerate(opc_tag_list):
+    #         sql = """insert into opc_tags(id, tagpath) values(?, ?)"""
+    #         # print(line)
+    #         c.execute(sql, (idx, line,))
+    #     conn.commit()
+
     # with open(path+'output.txt', 'w') as f:
     #     for line in opc_tag_list:
     #         f.write(line + '\n')
@@ -366,4 +379,34 @@ def test_type_node_dict():
     finish = time.time()
     print(f"Time to process: {mid-start} s")
     print(f"Time to map: {finish-mid} s")
+    assert True
+
+def test_map_underscore():
+    parameter_set = set()
+    with TagProcessor(
+        path+south_site_file,
+        area,
+        atomic_process_steps = [],
+        udtInstance_process_steps = [
+            partial(match_parameter_addition, '_', parameter_set),
+        ],
+        udtType_process_steps = [
+            partial(match_parameter_addition, '_', parameter_set),
+        ],
+    ) as processor:
+        processor.process()
+    with TagProcessor(
+        path+north_site_file,
+        'North',
+        atomic_process_steps = [],
+        udtInstance_process_steps = [
+            partial(match_parameter_addition, '_', parameter_set),
+        ],
+        udtType_process_steps = [
+            partial(match_parameter_addition, '_', parameter_set),
+        ],
+    ) as processor:
+        processor.process()
+    import pprint
+    pprint.pprint(parameter_set)
     assert True

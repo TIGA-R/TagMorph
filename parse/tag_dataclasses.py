@@ -28,25 +28,23 @@ class Binding:
             self._binding =  self.obj['binding']
         self._obj_type = type(self.obj)
 
+    def convert_to_parameter(self):
+        if self.bindType is not None and self.bindType == 'parameter':
+            return
+        self.obj = {'bindType': 'parameter', 'binding': self.binding}
+        self.bindType = 'parameter'
+        self.obj_type = dict
+
     @property
     def binding(self) -> str | bool:
         """The path property."""
         return self._binding
-        # if isinstance(self.obj, str) or isinstance(self.obj, bool):
-        #     return self.obj
-        # if isinstance(self.obj, dict):
-        #     return self.obj['binding']
-        # return ''
 
     @binding.setter
     def binding(self, value) -> None:
         if isinstance(value, bool):
             self.obj_type = bool
         self._binding = value
-        # if isinstance(self.obj, str) or isinstance(self.obj, bool):
-        #     self.obj = value
-        # if isinstance(self.obj, dict):
-        #     self.obj['binding'] = value
 
     @property
     def obj_type(self) -> Type:
@@ -78,51 +76,6 @@ class Binding:
         if self.obj_type in (str, bool):
             return self.binding
 
-# @dataclass
-# class OPCItemPath:
-#     obj: Union[str, dict]
-#
-#     @property
-#     def binding(self) -> str:
-#         """The path property."""
-#         if isinstance(self.obj, str):
-#             return self.obj
-#         if isinstance(self.obj, dict):
-#             return self.obj['binding']
-#         return ''
-#     @binding.setter
-#     def binding(self, value) -> None:
-#         if isinstance(self.obj, str):
-#             self.obj = value
-#         if isinstance(self.obj, dict):
-#             self.obj['binding'] = value
-#
-#     @property
-#     def bindType(self) -> str|None:
-#         """The bindType property."""
-#         if isinstance(self.obj, dict):
-#             return self.obj['bindType']
-#         return None 
-#     @bindType.setter
-#     def bindType(self, value) -> None:
-#         if isinstance(self.obj, dict):
-#             self.obj['bindType'] = value
-#
-#     def to_obj(self):
-#         bind_dict = {'binding': self.binding}
-#         if self.bindType is not None:
-#             bind_dict['bindType'] = self.bindType
-#         return bind_dict
-
-# @dataclass(order=True)
-# class Parameters:
-#     namespace: dict|None
-#     namespaceFlag: dict|None
-#
-#     @classmethod
-#     def from_obj(cls, node_dict: dict):
-#         struct_dict = {key: val for key, val in node_dict.items() if key in cls.__annotations__}
-#         return cls(**struct_dict)
 @dataclass
 class TagParameter:
     name: str
@@ -137,14 +90,6 @@ class TagParameter:
             return_dict['value'] = self.value # type: ignore
         elif isinstance(self.value, Binding):
             return_dict['value'] = self.value.to_obj() # type: ignore
-        # if self.value is not None:
-        #     if isinstance(self.value):
-        #     type_dict = {
-        #     int: self.value,
-        #     str: self.value,
-        #     Binding: self.value.to_obj(), # type: ignore
-        #     }
-        #     return_dict['value'] = type_dict[type(self.value)]
         return (self.name, return_dict)
     
     @classmethod
@@ -173,6 +118,7 @@ class Node:
     valueSource: ValueSource = None
     enabled: Binding|None = None
     historyEnabled: Binding|None = None 
+    sourceTagPath: Binding|None = None
     historyMaxAge: int|None = None
     typeId: str|None = None
     expression: str|None= None

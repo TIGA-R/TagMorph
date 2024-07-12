@@ -1,0 +1,2 @@
+2024-07-08 16:21:34,019 WARNING Node removed without id_log parent: Name: New Tag, Path: South01/Ferguson McKnight Echo/Ferguson McKnight Echo/Facility
+2024-07-08 16:22:30,806 WARNING Node removed without id_log parent: Name: New Tag, Path: South01/Ferguson McKnight Echo/Ferguson McKnight Echo/Facility

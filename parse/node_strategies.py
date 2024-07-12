@@ -1,6 +1,15 @@
 from dataclasses import asdict, dataclass
 from typing import Callable
-from .tag_dataclasses import Binding, Node, TagParameter, TagType
+from .tag_dataclasses import Binding, Node, TagParameter, TagType, ValueSource
+import logging
+
+type OldString = str
+type NewString = str
+
+logging.basicConfig(
+    filename='C:\\Users\\Bobby.Miller\\MGY\\tagmorph\\logs\\log.txt',
+    format="%(asctime)s | %(levelname)s | %(message)s |>",
+)
 
 @dataclass
 class NodeStrategy:
@@ -53,13 +62,6 @@ def expression_format(
     or 'isNull' not in node.expression\
     or 'toString' not in node.expression:
         return node
-    # if '{[.]OPC}' in node.expression:
-    #     breakpoint()
-    # expression_set.add(node.expression)
-    # ignore_set = {'Alarm Condition'}
-    # for item in ignore_set:
-    #     if item in node.expression:
-    #         return node
     tank_set = {'Top Level', 'Interface Level', 'Tank Shut In'}
     for item in tank_set:
         if item in node.expression:
@@ -94,6 +96,7 @@ def update_opc_path(node: Node) -> Node:
     Apply OPC-UA prefix parameters to opcpath string
     """
     if isinstance(node.opcItemPath, Binding) and isinstance(node.opcItemPath.binding, str):
+        node.opcItemPath.convert_to_parameter()
         node.opcItemPath.binding = "{namespaceFlag}={namespace};s=" + node.opcItemPath.binding
     return node
 
@@ -105,21 +108,20 @@ def add_min_history(node: Node, hours: int) -> Node:
         node.historyMaxAge = hours
     return node
 
-def opc_path_change(old_str: str, new_str: str, node: Node) -> Node:
+def opc_path_change(replace_dict: dict[OldString, NewString], node: Node) -> Node:
     """
     Generic function to substitute opc path substring
     """
-    # REVIEW THIS CODE WITH NODE/OPCITEMPATH CHANGE
-    if node.opcItemPath is not None and node.valueSource == 'opc' and isinstance(node.opcItemPath.binding, str):
-        node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
-    # if "opcItemPath" in node and node["opcItemPath"] and node["valueSource"] == 'opc':
-    #     if isinstance(node["opcItemPath"], str):
-    #         node["opcItemPath"] = node["opcItemPath"].replace(old_str, new_str)
-    #     if isinstance(node["opcItemPath"], dict):
-    #         node["opcItemPath"]["binding"] = node["opcItemPath"]["binding"].replace(old_str, new_str)
+    if node.opcItemPath is not None \
+    and node.valueSource == 'opc' \
+    and isinstance(node.opcItemPath.binding, str):
+        for old_str, new_str in replace_dict.items():
+            if not old_str in node.opcItemPath.binding:
+                continue
+            node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str)
     return node
 
-def binding_change(old_str: str, new_str: str, node:Node) -> Node:
+def binding_change(replace_dict: dict[OldString, NewString], node:Node) -> Node:
     """
     Function for modifying all bindings inside of a tag export
     """
@@ -128,8 +130,9 @@ def binding_change(old_str: str, new_str: str, node:Node) -> Node:
         binding = bind_field.binding
         if isinstance(binding, bool):
             continue
-        if old_str in binding:
-            setattr(bind_field, 'binding', binding.replace(old_str, new_str))
+        for old_str, new_str in replace_dict.items():
+            if old_str in binding:
+                setattr(bind_field, 'binding', binding.replace(old_str, new_str))
     return node
 
 def history_update(node: Node) -> Node:
@@ -184,6 +187,15 @@ def name_addition(name_set: set, node: Node) -> Node:
     name_set.add(node.name)
     return node
 
+def match_parameter_addition(match_string: str, parameter_set: set, node: Node) -> Node:
+    if node.parameters is None:
+        return node
+    for parameter in node.parameters:
+        if match_string in parameter.name:
+            parameter_set.add(parameter.name)
+    return node
+
+
 def udt_alarm_node_update(alarm_udt_nodes: set, alarm_udt_node: list, node: Node) -> Node:
     """
     logging function to track alarm nodes in file - no modifications
@@ -200,18 +212,31 @@ def udt_count_update(udt_count: Callable, node: Node) -> Node:
     udt_count(set([key for key, val in asdict(node).items() if val is not None]))
     return node
 
-def parameter_change(old_str: str, new_str: str, node: Node) -> Node:
+def parameter_change(replace_dict: dict[OldString, NewString], node: Node) -> Node:
     """
     Replace parameter substring from old_str to new_str
     """
     if node.parameters is None:
         return node
     for parameter in node.parameters:
-        parameter.name = parameter.name.replace(old_str, new_str)
+        for old_str, new_str in replace_dict.items():
+            if old_str in parameter.name:
+                parameter.name = parameter.name.replace(old_str, new_str)
+            if parameter.value is None:
+                continue
+            if isinstance(parameter.value, int):
+                continue
+            if isinstance(parameter.value, Binding) \
+            and isinstance(parameter.value.binding, str) \
+            and old_str in parameter.value.binding \
+            and new_str not in parameter.value.binding:
+                parameter.value.binding = parameter.value.binding.replace(old_str, new_str)
+            if isinstance(parameter.value, str) \
+            and old_str in parameter.value \
+            and new_str not in parameter.value:
+                parameter.value = parameter.value.replace(old_str, new_str)
     return node
 
-# def parameter_addition(parameter_dict: dict[str, TagParameter], node: Node) -> Node:
-#     pass
 def parameters_addition(parameters: list[TagParameter], node: Node) -> Node:
     if node.parameters is None:
         return node
@@ -227,10 +252,6 @@ def namespace_parameter_addition(node: Node) -> Node:
         TagParameter('namespace', 'string', '2'),
     ]
     return parameters_addition(namespace_list, node)
-    # if node.parameters:
-    #     node.parameters['namespaceFlag'] = {'dataType': 'String', 'value': 'ns'}
-    #     node.parameters['namespace'] = {'dataType': 'String', 'value': '2'}
-    # return node
 
 def parameters_remove(parameters: list[str], node: Node) -> Node:
     """
@@ -271,17 +292,44 @@ def type_dict_build(
         name_dict[node.path.lstrip('_types_/') + '/' + node.name] = node.id
     return node
 
-def opc_tag_dict_build(opc_dict: dict[int, tuple[str, int]], node: Node) -> Node:
-    if node.tagType == 'AtomicTag' and node.valueSource == 'opc':
-        # opc_dict[node.id] = (node.path + '/' + node.name, node.id_log)
-        opc_dict[node.id] = (node.name, node.id_log[0][0])
+def atom_tag_dict_build(
+    atom_dict: dict[int, tuple[str, int]], 
+    atomic_type: ValueSource|list[ValueSource],
+    node: Node
+) -> Node:
+    if not node.tagType == 'AtomicTag':
+        return node
+    if isinstance(atomic_type, str) and not node.valueSource == atomic_type:
+        return node
+    if isinstance(atomic_type, list) and node.valueSource not in atomic_type:
+        return node
+    if not node.id_log:
+        logging.warning(
+            f'Node removed without id_log parent: ' + \
+            f'Name: {node.name}, ' + \
+            f'Path: {node.path}'
+        )
+        return node
+    atom_dict[node.id] = (node.name, node.id_log[0][0])
     return node
+
+def alarm_enabled_parameter_update(node: Node) -> Node:
+    if node.alarms is None:
+        return node
+    for alarm in node.alarms:
+        enabled = alarm.get('enabled')
+        if enabled is not None \
+        and isinstance(enabled, dict):
+            enabled['value'] = enabled['value'].replace('_', '_p_')
+    return node
+
 
 def udt_instance_dict_build(
     udt_inst_dict: dict[int, str],
     node: Node,
 ) -> Node:
-    if node.tagType == 'UdtInstance' and (node.enabled is None or node.enabled.binding):
+    if node.tagType == 'UdtInstance': 
+    # and (node.enabled is None or node.enabled.binding):
         udt_inst_dict[node.id] = (node.path + '/' + node.name)
     return node
 
