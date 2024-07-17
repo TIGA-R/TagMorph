@@ -1,6 +1,6 @@
-from dataclasses import asdict, dataclass
-from typing import Callable
-from .tag_dataclasses import Binding, Node, TagParameter, TagType, ValueSource
+from dataclasses import asdict, dataclass, field
+from typing import Callable, Literal, Self
+from .tag_dataclasses import Binding, Node, TagParameter, ValueSource
 from itertools import permutations
 import logging
 
@@ -140,17 +140,27 @@ def binding_change(replace_dict: dict[OldString, NewString], node:Node) -> Node:
         binding = bind_field.binding
         if isinstance(binding, bool):
             continue
+        db_flag = False
+        # if '_SP Adder' in binding:
+        #     db_flag = True
+            # breakpoint()
         for old_str, new_str in replace_dict.items():
+            if old_str == '__SP Adder' and db_flag:
+                breakpoint()
+                
             if old_str in binding \
             and new_str not in binding:
                 prefix_in = False
                 for perm in permutations(('_t_', '_p_', '_e_'), 2):
                     if new_str.replace(perm[0], perm[1]) in binding:
                         prefix_in = True
+                        if db_flag:
+                            breakpoint()
                         break
                 if prefix_in:
                     continue
-                binding = binding.replace(old_str, new_str).replace('__', '_')
+                if db_flag: breakpoint()
+                binding = binding.replace(old_str, new_str).replace('_'+new_str, new_str)
         setattr(bind_field, 'binding', binding)
     return node
 
@@ -214,6 +224,90 @@ def match_parameter_addition(match_string: str, parameter_set: set, node: Node) 
             parameter_set.add(parameter.name)
     return node
 
+type AlarmMode = Literal[
+    'AboveValue',
+    'BelowValue',
+    'OnCondition',
+    'BadQuality',
+    'OutOfEngRange',
+    'BetweenValues',
+    'AnyChange',
+    'Equal',
+    'Inequality',
+    'Bit',
+    'OutsideValues',
+    
+]
+type Priority = Literal[
+    'Critical',
+    'High',
+    'Medium',
+    'Low',
+    'Diagnostic'
+]
+@dataclass(frozen=True, eq=True)
+class AlarmBinding:
+    value: str
+    bindType: str
+
+@dataclass(frozen=True, eq=True)
+class Alarm:
+    mode: AlarmMode
+    priority: AlarmBinding|Priority
+    name: str
+    # path: str
+    setpointA: float|None = None
+    setpointB: float|None = None
+    activeCondition: AlarmBinding|None = None
+    # _extras: dict = field(default_factory=dict)
+
+
+    @classmethod
+    def from_obj(
+        cls, 
+        node_dict: dict,
+        # path: str, 
+    ) -> Self:
+
+        """
+        Construct Node object from a json tag provider object
+        """
+        struct_dict: dict[str, str|float|AlarmBinding|AlarmMode] = {key: val 
+            if not isinstance(val, dict) 
+            else AlarmBinding(val['value'], val['bindType']) 
+            for key, val in node_dict.items() 
+            if key in cls.__annotations__ 
+            }
+        # struct_dict['_extras'] = {key: val 
+        #     for key, val in node_dict.items() 
+        #     if key not in cls.__annotations__}
+        return cls(**struct_dict) 
+
+    def to_obj(self) -> dict:
+        """
+        return Node object to json-style dict + path string
+        """
+        data_dict = {key: val 
+            if 'Binding' not in str(self.__annotations__[key]) 
+            else getattr(self, key).to_obj() 
+            for key, val in asdict(self).items()
+            if val is not None
+        }
+        return data_dict
+
+def build_alarm_set(alarm_set: set[Alarm], node: Node) -> Node:
+    if node.alarms is None:
+        return node
+    for alarm in node.alarms:
+        if alarm.get('mode') is None \
+        or alarm.get('priority') is None:
+            continue
+        try:
+            alarm_set.add(Alarm.from_obj(alarm))
+        except TypeError:
+            breakpoint()
+            print(Alarm.from_obj(alarm))
+    return node
 
 def udt_alarm_node_update(alarm_udt_nodes: set, alarm_udt_node: list, node: Node) -> Node:
     """
@@ -239,8 +333,16 @@ def parameter_change(replace_dict: dict[OldString, NewString], node: Node) -> No
         return node
     for parameter in node.parameters:
         for old_str, new_str in replace_dict.items():
-            if old_str in parameter.name:
-                parameter.name = parameter.name.replace(old_str, new_str)
+            if old_str in parameter.name \
+            and new_str not in parameter.name:
+                prefix_in = False
+                for perm in permutations(('_t_', '_p_', '_e_'), 2):
+                    if new_str.replace(perm[0], perm[1]) in parameter.name:
+                        prefix_in = True
+                        break
+                if prefix_in:
+                    continue
+                parameter.name = parameter.name.replace(old_str, new_str).replace('__', '_')
             if parameter.value is None:
                 continue
             if isinstance(parameter.value, int):
@@ -354,7 +456,8 @@ def alarm_enabled_parameter_update(node: Node) -> Node:
     for alarm in node.alarms:
         enabled = alarm.get('enabled')
         if enabled is not None \
-        and isinstance(enabled, dict):
+        and isinstance(enabled, dict) \
+        and '_p_' not in enabled['value']:
             enabled['value'] = enabled['value'].replace('_', '_p_')
     return node
 

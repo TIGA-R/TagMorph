@@ -3,7 +3,8 @@ from functools import partial
 from parse.tag_dataclasses import Node, Binding, ValueSource
 from parse.tag_process import TagProcessor
 from parse.node_strategies import (
-    binding_change, 
+    binding_change,
+    build_alarm_set, 
     expression_format, 
     history_update,
     match_parameter_addition,
@@ -409,4 +410,39 @@ def test_map_underscore():
         processor.process()
     import pprint
     pprint.pprint(parameter_set)
+    assert True
+
+def test_alarm_map():
+    alarm_set = set()
+    with TagProcessor(
+        path+south_site_file,
+        area,
+        atomic_process_steps = [
+            partial(build_alarm_set, alarm_set),
+        ],
+        udtInstance_process_steps = [
+        ],
+        udtType_process_steps = [
+        ],
+    ) as processor:
+        processor.process()
+    with TagProcessor(
+        path+north_site_file,
+        'North',
+        atomic_process_steps = [
+            partial(build_alarm_set, alarm_set),
+        ],
+        udtInstance_process_steps = [
+        ],
+        udtType_process_steps = [
+        ],
+    ) as processor:
+        processor.process()
+    import pickle
+    output = open('alarmdata.pkl', 'wb')
+    pickle.dump(alarm_set, output)
+    output.close()
+    import pprint
+    pprint.pprint(alarm_set)
+    print(len(alarm_set))
     assert True

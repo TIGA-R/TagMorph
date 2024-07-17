@@ -5,7 +5,7 @@ from parse.node_strategies import alarm_enabled_parameter_update, atom_tag_dict_
 from parse.tag_dataclasses import ValueSource
 from parse.tag_process import TagProcessor  
 
-path = str(pathlib.Path(__file__).parent.resolve()) + '/tests/json/7-11-2024/'
+path = str(pathlib.Path(__file__).parent.resolve()) + '/tests/json/7-16-2024/'
 single_site_file = 'simple single site tags.json'
 original_single_site_file = 'single site tags.json'
 single_well_file = 'single well tags.json'
@@ -116,6 +116,8 @@ parameter_change_dict = {
     '_Volume Yesterday': '_t_Volume Yesterday',
     '_Water': '_p_Water',
     '_Well Num': '_e_Well Num',
+    '_SP Adder': '_p_SP Adder',
+    '_Separator Adder': '_p_Separator Adder',
     '__Abs Tank Num': '_e_Abs Tank Num',
     '__CCF Factor': '_t_CCF Factor',
     '__CPL Factor': '_t_CPL Factor',
@@ -138,6 +140,7 @@ parameter_change_dict = {
     '__Gross Standard Volume Current Week': '_t_Gross Standard Volume Current Week',
     '__Gross Standard Volume Previous Hour': '_t_Gross Standard Volume Previous Hour',
     '__Gross Standard Volume Previous Month': '_t_Gross Standard Volume Previous Month',
+    '__Gross Standard Volume Prev Month': '_t_Gross Standard Volume Prev Month',
     '__Gross Standard Volume Previous Week': '_t_Gross Standard Volume Previous Week',
     '__Gross Standard Volume Today': '_t_Gross Standard Volume Today',
     '__Gross Standard Volume Yesterday': '_t_Gross Standard Volume Yesterday',
@@ -189,7 +192,7 @@ parameter_change_dict = {
     '__SW Avg Prev Mnth': '_t_SW Avg Prev Mnth',
     '__SW Correction Factor': '_t_SW Correction Factor',
     '__SW Volume Prev Mnth': '_t_SW Volume Prev Mnth',
-    '__Separator Adder': '_t_Separator Adder',
+    '__Separator Adder': '_p_Separator Adder',
     '__Serial Number': '_t_Serial Number',
     '__Statement Volume Prev Mnth': '_t_Statement Volume Prev Mnth',
     '__Temperature': '_t_Temperature',
@@ -216,10 +219,10 @@ if __name__ == '__main__':
     start = time.time()
     # build_audit_tag_table(
     #     atomic_value_source='expr',
-    #     source_file=path+north_site_file,
-    #     area='North',
-    #     db=path+'july_11_2024_tag_audit',
-    #     table='north_expr_tags',
+    #     source_file=path+south_site_file,
+    #     area='South',
+    #     db=path+'july_16_2024_tag_audit',
+    #     table='south_expr_tags',
     #     columns={
     #         'original_local': 'TEXT',
     #         'modified_local': 'TEXT',
@@ -231,10 +234,10 @@ if __name__ == '__main__':
     # )
     # build_audit_tag_table(
     #     atomic_value_source='opc',
-    #     source_file=path+north_site_file,
-    #     area='North',
-    #     db=path+'july_11_2024_tag_audit',
-    #     table='north_opc_tags',
+    #     source_file=path+south_site_file,
+    #     area='South',
+    #     db=path+'july_16_2024_tag_audit',
+    #     table='south_opc_tags',
     #     columns={
     #         'original_local': 'TEXT',
     #         'modified_local': 'TEXT',
@@ -246,8 +249,8 @@ if __name__ == '__main__':
     # )
 
     with TagProcessor(
-        path+north_site_file,
-        'North',
+        path+south_site_file,
+        'South',
         atomic_process_steps = [
             partial(opc_path_change, parameter_change_dict),
             partial(binding_change, parameter_change_dict),
@@ -325,8 +328,7 @@ if __name__ == '__main__':
         ],
     ) as processor:
         processor.process()
-        processor.to_file(path + 'north_prod_mod.json')
-
+        processor.to_file(path + 'south_prod_mod_2.json')
     mid = time.time()
 
     finish = time.time()
