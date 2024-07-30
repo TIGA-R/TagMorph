@@ -1,8 +1,13 @@
+from collections import namedtuple
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Literal, Self
 from .tag_dataclasses import Binding, Node, TagParameter, ValueSource
 from itertools import permutations
 import logging
+
+from rich.traceback import install
+
+install()
 
 type OldString = str
 type NewString = str
@@ -128,6 +133,29 @@ def opc_path_change(replace_dict: dict[OldString, NewString], node: Node) -> Nod
                     break
             if prefix_in:
                 continue
+            lp_device = False
+            if old_str == '_LP' or old_str =='_HP':
+                for item in [
+                'COBRA_HP_RD',
+                'CREED_1H_HP_RD',
+                'CREED_1H_LP_RD',
+                'CREED_5H_HP_RD',
+                'CREED_5H_LP_RD',
+                'SUPER_HP_RD',
+                'TANGO_HP_RD',
+                'TANGO_LP_RD',
+                'BOONE_HP_RD',
+                'BOONE_LP_RD',
+                'TBK_LP_HP_RD',
+                'KEYS_HP_RD',
+                'M_ANN_HP_LP_RD',
+                ]:
+                    if item in node.opcItemPath.binding:
+                        lp_device = True
+                        break
+            if lp_device:
+                continue
+
             node.opcItemPath.binding = node.opcItemPath.binding.replace(old_str, new_str).replace('__', '_')
     return node
 
@@ -332,6 +360,8 @@ def parameter_change(replace_dict: dict[OldString, NewString], node: Node) -> No
     if node.parameters is None:
         return node
     for parameter in node.parameters:
+        if parameter.name == 'Device01':
+            continue
         for old_str, new_str in replace_dict.items():
             if old_str in parameter.name \
             and new_str not in parameter.name:
@@ -476,3 +506,63 @@ def print_node(node_num: int, node: Node) -> Node:
         print((node.id, node.path + '/' + node.name))
     return node
 
+
+def atomic_tag_set_build(
+    atomic_tag_set: set[tuple[str, int, int]],
+    node: Node
+) -> Node:
+    folder_list = [
+        "FACILITY",
+        "ESP",
+        "METER",
+        "PLUNGER",
+        "POC",
+        "PUMP",
+        "REMOTE DEVICE",
+        "TANK",
+        "VALVE",
+        "VESSEL",
+        "WELL",
+        "FLARE",
+        "COMPRESSOR",
+    ]
+    if node.tagType != 'AtomicTag':
+        return node
+    for folder in folder_list:
+        if '/'+folder+'/' in node.path:
+            if '(Message)' in node.name:
+                atomic_tag_set.add((node.name.replace(' (Message)', ''), 1, 0))
+                atomic_tag_set.discard((node.name.replace(' (Message)', ''), 0, 0))
+            else:
+                if (node.name, 1, 0) in atomic_tag_set:
+                    return node
+                atomic_tag_set.add((node.name.replace(' (Message)', ''), 0, 1 if node.dataType == 'String' else 0))
+            return node
+    return node
+
+def update_tag_group(node: Node) -> Node:
+    if node.tagType != 'AtomicTag':
+        return node
+    if node.tagGroup is not None and node.tagGroup != 'Default':
+        return node
+    if node.valueSource != 'opc':
+        return node
+    group_dict = {
+        "FACILITY": "Facility",
+        "ESP": "ESP",
+        "METER": "Meter",
+        "PLUNGER": "Plunger",
+        "POC": "POC",
+        "PUMP": "Pump",
+        "REMOTE DEVICE": "Remote Device",
+        "TANK": "Tank",
+        "VALVE": "Valve",
+        "VESSEL": "Vessel",
+        "WELL": "Well",
+        "FLARE": "Flare",
+        "COMPRESSOR": "Compressor",
+    }
+    for group in group_dict.keys():
+        if '/'+group+'/' in node.path:
+            node.tagGroup = group_dict[group]
+    return node

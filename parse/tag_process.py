@@ -43,7 +43,7 @@ class TagProcessor:
                 return
             self.id += 1
             # Coerce node dict + path to node dataclass object
-            node_obj = Node.from_obj(node, path, self.id, id_log)
+            node_obj: Node = Node.from_obj(node, path, self.id, id_log)
 
             if node_obj.tagType == 'UdtInstance' and node_obj.typeId is None:
                 return
@@ -54,13 +54,14 @@ class TagProcessor:
                 'AtomicTag': self.atomic_process_steps,
                 'UdtType': self.udtType_process_steps,
             }
-            node_obj = NodeStrategy(
+            node_obj: Node  = NodeStrategy(
             node_obj, 
             node_process_steps[node_obj.tagType],
             ).process()
+
             updated_node, path = node_obj.to_obj()
 
-            for key in node:
+            for key in updated_node:
                 node[key] = updated_node[key]
             # node_mods = {key: val for key, val in asdict(node_obj).items() if val is not None and key != 'path'}
             # for key, value in node_mods.items():

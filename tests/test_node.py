@@ -20,6 +20,7 @@ from parse.node_strategies import (
     update_opc_path,
 )
 from analyze.relationships import SqliteDatatype, build_child_parent, build_test_database, atom_tag_gen_build
+
 from rich.traceback import install
 
 install()

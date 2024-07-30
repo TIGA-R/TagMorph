@@ -112,3 +112,5 @@ south tags.json
 test.json
 abs hist tags.json
 *.json
+json/
+__pycache__/

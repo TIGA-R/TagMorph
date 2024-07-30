@@ -1,11 +1,17 @@
 from functools import partial
 import pathlib
+from pprint import pprint
 from analyze.relationships import SqliteDatatype, atom_tag_gen_build, build_child_parent, build_test_database
-from parse.node_strategies import alarm_enabled_parameter_update, atom_tag_dict_build, binding_change, expression_format, history_update, namespace_parameter_addition, opc_path_change, parameter_change, parameters_remove, type_case_wrapper, type_dict_build, type_prefix_removal, udt_instance_dict_build, update_opc_path
+from parse.node_strategies import alarm_enabled_parameter_update, atom_tag_dict_build, atomic_tag_set_build, binding_change, expression_format, history_update, namespace_parameter_addition, opc_path_change, parameter_change, parameters_remove, type_case_wrapper, type_dict_build, type_prefix_removal, udt_instance_dict_build, update_opc_path, update_tag_group
 from parse.tag_dataclasses import ValueSource
 from parse.tag_process import TagProcessor  
 
-path = str(pathlib.Path(__file__).parent.resolve()) + '/tests/json/7-16-2024/'
+from rich.traceback import install
+
+install()
+
+path = str(pathlib.Path(__file__).parent.resolve()) + '/tests/json/7-29-2024/'
+# '/json/7-19-2024/'
 single_site_file = 'simple single site tags.json'
 original_single_site_file = 'single site tags.json'
 single_well_file = 'single well tags.json'
@@ -215,13 +221,14 @@ parameter_change_dict = {
 if __name__ == '__main__':
     type_case_correction = type_case_wrapper()
     missing_udt_dict = {}
+    # atomic_tag_set = set()
     import time
     start = time.time()
     # build_audit_tag_table(
     #     atomic_value_source='expr',
     #     source_file=path+south_site_file,
     #     area='South',
-    #     db=path+'july_16_2024_tag_audit',
+    #     db=path+'july_29_2024_tag_audit',
     #     table='south_expr_tags',
     #     columns={
     #         'original_local': 'TEXT',
@@ -236,8 +243,40 @@ if __name__ == '__main__':
     #     atomic_value_source='opc',
     #     source_file=path+south_site_file,
     #     area='South',
-    #     db=path+'july_16_2024_tag_audit',
+    #     db=path+'july_29_2024_tag_audit',
     #     table='south_opc_tags',
+    #     columns={
+    #         'original_local': 'TEXT',
+    #         'modified_local': 'TEXT',
+    #         'original_dev': 'TEXT',
+    #         'modified_dev': 'TEXT',
+    #         'original_prod': 'TEXT',
+    #         'modified_prod': 'TEXT',
+    #     },
+    # )
+    #
+    #
+    # build_audit_tag_table(
+    #     atomic_value_source='expr',
+    #     source_file=path+north_site_file,
+    #     area='North',
+    #     db=path+'july_29_2024_tag_audit',
+    #     table='north_expr_tags',
+    #     columns={
+    #         'original_local': 'TEXT',
+    #         'modified_local': 'TEXT',
+    #         'original_dev': 'TEXT',
+    #         'modified_dev': 'TEXT',
+    #         'original_prod': 'TEXT',
+    #         'modified_prod': 'TEXT',
+    #     },
+    # )
+    # build_audit_tag_table(
+    #     atomic_value_source='opc',
+    #     source_file=path+north_site_file,
+    #     area='North',
+    #     db=path+'july_29_2024_tag_audit',
+    #     table='north_opc_tags',
     #     columns={
     #         'original_local': 'TEXT',
     #         'modified_local': 'TEXT',
@@ -255,8 +294,9 @@ if __name__ == '__main__':
             partial(opc_path_change, parameter_change_dict),
             partial(binding_change, parameter_change_dict),
             partial(parameters_remove, ['_Historize']),
+            # partial(atomic_tag_set_build, atomic_tag_set),
+            update_tag_group,
             update_opc_path,
-            namespace_parameter_addition,
             alarm_enabled_parameter_update,
             expression_format,
             history_update,
@@ -290,7 +330,6 @@ if __name__ == '__main__':
             partial(binding_change, parameter_change_dict),
             alarm_enabled_parameter_update,
             update_opc_path,
-            namespace_parameter_addition,
             expression_format,
             history_update,
         ],
@@ -328,8 +367,93 @@ if __name__ == '__main__':
         ],
     ) as processor:
         processor.process()
-        processor.to_file(path + 'south_prod_mod_2.json')
+        processor.to_file(path + 'south_prod_mod.json')
+
+    with TagProcessor(
+        path+north_site_file,
+        'North',
+        atomic_process_steps = [
+            partial(opc_path_change, parameter_change_dict),
+            partial(binding_change, parameter_change_dict),
+            partial(parameters_remove, ['_Historize']),
+            # partial(atomic_tag_set_build, atomic_tag_set),
+            update_tag_group,
+            update_opc_path,
+            alarm_enabled_parameter_update,
+            expression_format,
+            history_update,
+            type_prefix_removal,
+        ],
+        udtInstance_process_steps = [
+            type_prefix_removal,
+            partial(type_case_correction, missing_udt_dict),
+            partial(parameters_remove, [
+                '_Historize',
+                '_Address Buffer Description',
+                '__Abs Tank Num Description',
+                '__Total Num Description',
+                '__Meter Num Description',
+                '_Tank Type Description',
+                '_Tank Num Description',
+                '_Tank N_2 Description',
+                '_Water Description',
+                '_LP Description',
+                '_Choke Valve Description',
+                'Pump N_12 Description',
+                'Pump N_2 Description',
+                'Pump N_3 Description',
+                'Tank N_4 Description',
+                'Vessel N_3 Description',
+                'Well_n2_Description',
+                'Well_n4_Description',
+            ]),
+            partial(parameter_change, parameter_change_dict),
+            partial(opc_path_change, parameter_change_dict),
+            partial(binding_change, parameter_change_dict),
+            alarm_enabled_parameter_update,
+            update_opc_path,
+            expression_format,
+            history_update,
+        ],
+        udtType_process_steps = [
+            type_prefix_removal,
+            partial(type_case_correction, missing_udt_dict),
+            partial(parameters_remove, [
+                '_Historize',
+                '_Address Buffer Description',
+                '__Abs Tank Num Description',
+                '__Total Num Description',
+                '__Meter Num Description',
+                '_Tank Type Description',
+                '_Tank Num Description',
+                '_Tank N_2 Description',
+                '_Water Description',
+                '_LP Description',
+                '_Choke Valve Description',
+                'Pump N_12 Description',
+                'Pump N_2 Description',
+                'Pump N_3 Description',
+                'Tank N_4 Description',
+                'Vessel N_3 Description',
+                'Well_n2_Description',
+                'Well_n4_Description',
+            ]),
+            partial(parameter_change, parameter_change_dict),
+            partial(opc_path_change, parameter_change_dict),
+            partial(binding_change, parameter_change_dict),
+            update_opc_path,
+            alarm_enabled_parameter_update,
+            namespace_parameter_addition,
+            expression_format,
+            history_update,
+        ],
+    ) as processor:
+        processor.process()
+        processor.to_file(path + 'north_prod_mod.json')
+
     mid = time.time()
+    # for tag in atomic_tag_set:
+    #     print(', '.join((str(t) for t in tag)))
 
     finish = time.time()
     print(f"Time to process: {mid-start} s")

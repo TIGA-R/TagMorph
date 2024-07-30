@@ -1,6 +1,10 @@
 from typing import Literal, Self, Type, Union
 from dataclasses import asdict, dataclass, field, fields
 
+from rich.traceback import install
+
+install()
+
 type ValueSource = Literal[
         'opc',
         'expr',
@@ -125,6 +129,8 @@ class Node:
     parameters: list[TagParameter]|None = None
     alarms: dict|None = None
     opcItemPath: Binding|None = None
+    tagGroup: str|None = None
+    dataType: str|None = None
     tags: dict|None = None
     _extras: dict = field(default_factory=dict)
 
@@ -175,5 +181,7 @@ class Node:
             data_dict['opcItemPath'] = self.opcItemPath.to_obj()
         if self.parameters is not None:
             data_dict['parameters'] = {parameter.to_obj()[0]: parameter.to_obj()[1] for parameter in self.parameters}
+        # if self.tagGroup == 'Tank':
+        #     breakpoint()
         return (data_dict | self._extras, self.path)
 
